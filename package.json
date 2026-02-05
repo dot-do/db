@@ -1,0 +1,39 @@
+{
+  "name": "@dotdo/db",
+  "version": "0.1.0",
+  "description": "ParqueDB wrapper for dotdo ecosystem",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./backends": {
+      "import": "./dist/backends.js",
+      "types": "./dist/backends.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "parquedb": "file:./parquedb"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "keywords": [
+    "parquedb",
+    "database",
+    "parquet",
+    "dotdo"
+  ],
+  "license": "MIT"
+}
