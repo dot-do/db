@@ -37,7 +37,7 @@ import type { R2BackendOptions } from 'parquedb'
  * ```
  */
 export function createLocalBackend(basePath: string = '.db'): FsBackend {
-  return new FsBackend({ basePath })
+  return new FsBackend(basePath)
 }
 
 /**
@@ -88,9 +88,9 @@ export function createMemoryBackend(): MemoryBackend {
  */
 export function createR2Backend(
   bucket: R2Bucket,
-  options?: Omit<R2BackendOptions, 'bucket'>
+  options?: R2BackendOptions
 ): R2Backend {
-  return new R2Backend({ ...options, bucket } as R2BackendOptions)
+  return new R2Backend(bucket as never, options)
 }
 
 /**

@@ -27,6 +27,7 @@
     "parquedb": "file:./parquedb"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260205.0",
     "typescript": "^5.7.2"
   },
   "keywords": [
