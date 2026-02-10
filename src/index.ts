@@ -224,6 +224,33 @@ export {
 } from 'parquedb'
 
 // =============================================================================
+// Entity Search (Cross-Type Full-Text Scoring)
+// =============================================================================
+
+export {
+  scoreEntity,
+  searchEntities,
+  type ScoreResult,
+  type EntitySearchParams,
+  type EntitySearchResult,
+} from 'parquedb'
+
+// =============================================================================
+// Event Sync (Lightweight CDC Bidirectional Sync)
+// =============================================================================
+
+export {
+  resolveEventSync,
+  computeEventSyncCursor,
+  type EventSyncEvent,
+  type EventSyncConflictStrategy,
+  type EventSyncConflictInfo,
+  type EventSyncResult,
+  type ResolveEventSyncParams,
+  type ResolveEventSyncResult,
+} from 'parquedb'
+
+// =============================================================================
 // Version
 // =============================================================================
 
