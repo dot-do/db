@@ -52,12 +52,14 @@ export {
   R2OperationError,
   R2ETagMismatchError,
   R2NotFoundError,
+  DOSqliteBackend,
   getStorageCapabilities,
   hasStorageCapability,
   isStreamable,
   isMultipart,
   isTransactional,
   type R2BackendOptions,
+  type DOSqliteBackendOptions,
   type StorageCapabilities,
 } from 'parquedb'
 
