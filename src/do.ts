@@ -298,6 +298,34 @@ export class DatabaseDO extends ParqueDBDO {
     return jsonResponse({ error: 'Not found' }, 404)
   }
 
+  // =========================================================================
+  // RPC-friendly async wrappers
+  //
+  // ParqueDBDO's findEntitiesFromSqlite/countEntitiesFromSqlite/getEntityFromSqlite
+  // are synchronous, which means they can't be called via cross-worker DO RPC
+  // (Cloudflare requires RPC methods to return Promises). These async wrappers
+  // delegate to the synchronous methods and make them RPC-accessible.
+  // =========================================================================
+
+  async find(
+    ns: string,
+    filter?: Record<string, unknown>,
+    options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
+  ): Promise<{ items: unknown[]; total: number; hasMore: boolean }> {
+    await this.ensureInitialized()
+    return this.findEntitiesFromSqlite(ns, { ...options, filter })
+  }
+
+  async countEntities(ns: string): Promise<number> {
+    await this.ensureInitialized()
+    return this.countEntitiesFromSqlite(ns)
+  }
+
+  async getEntity(ns: string, id: string): Promise<unknown> {
+    await this.ensureInitialized()
+    return this.getEntityFromSqlite(ns, id)
+  }
+
   /**
    * Override point for request routing.
    * Return a Response to handle the request, or null to fall through to 404.
