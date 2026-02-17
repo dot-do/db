@@ -13,6 +13,12 @@
     "./backends": {
       "import": "./dist/backends.js",
       "types": "./dist/backends.d.ts"
+    },
+    "./do": {
+      "workerd": "./dist/do.js",
+      "worker": "./dist/do.js",
+      "import": "./dist/do.js",
+      "types": "./dist/do.d.ts"
     }
   },
   "files": [
@@ -24,7 +30,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "parquedb": "file:./parquedb"
+    "parquedb": "file:./parquedb",
+    "sqids": "^0.3.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260205.0",

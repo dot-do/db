@@ -253,6 +253,21 @@ export {
 } from 'parquedb'
 
 // =============================================================================
+// DatabaseDO (Durable Object)
+// =============================================================================
+
+export { DatabaseDO } from './do'
+export type { DOContext, ParqueDBCollection, EventQueryOptions, DatabaseDOEnv, SyncRequest, SyncConflict, EventsBinding, DurableEvent, EventLoggerDeps } from './do'
+export type { SyncEvent, Entity as DatabaseEntity } from './do'
+export { EventLogger, queryEventsFromWal, validateEntityType, isValidEntityType, toEntityType, DANGEROUS_TYPE_NAMES, generateEntityId } from './do'
+export { DEFAULT_RETENTION_DAYS, MIN_EVENTS_PER_ENTITY, COMPACTION_ALARM_INTERVAL_MS, buildCompactionQuery, computeCompactionCutoff, shouldCompact, COMPACTION_WRITE_INTERVAL, COMPACTION_COOLDOWN_MS } from './do'
+export { reconstructFromEvents } from './do'
+export type { EventRow, ReconstructionResult } from './do'
+export { purgeExpiredEntities, previewPurge, DEFAULT_PURGE_RETENTION_DAYS } from './do'
+export type { PurgeContext, PurgeOptions, PurgeResult, PreviewResult } from './do'
+export { buildDurableEvent, forwardEvents, mapOperationToEventType, OPERATION_TYPE_MAP } from './do'
+
+// =============================================================================
 // Version
 // =============================================================================
 
