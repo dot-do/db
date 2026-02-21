@@ -30,7 +30,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "parquedb": "file:./parquedb",
     "sqids": "^0.3.0"
   },
   "devDependencies": {
