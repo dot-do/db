@@ -15,8 +15,8 @@
       "types": "./dist/clickhouse/index.d.ts"
     },
     "./do": {
-      "workerd": "./dist/do.js",
-      "worker": "./dist/do.js",
+      "workerd": "./src/do.ts",
+      "worker": "./src/do.ts",
       "import": "./dist/do.js",
       "types": "./dist/do.d.ts"
     }
@@ -32,6 +32,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "dotenv": "^17.3.1",
     "sqids": "^0.3.0"
   },
   "devDependencies": {

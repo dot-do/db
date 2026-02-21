@@ -40,16 +40,17 @@ const step = process.argv[2] || 'help'
 async function create() {
   console.log('Creating S3Queue table...')
 
-  // S3Queue reads raw JSON lines from R2 (pipeline sink writes JSON format)
-  // Column is named 'raw' — ClickHouse Cloud default for single-column JSONEachRow
+  // S3Queue reads NDJSON from R2 (pipeline sink writes JSON format)
+  // Column named 'value' — matches the Pipeline envelope key {"value": {...}}
+  // JSONEachRow maps JSON keys to column names, so 'value' gets the inner object
   // Low polling intervals for <5s e2e latency once files land in R2
   await client.exec(`
     CREATE TABLE IF NOT EXISTS default.events_queue (
-      raw String
+      value String
     ) ENGINE = S3Queue('${queueUrl}', '${r2Ak}', '${r2Sk}', 'JSONEachRow')
     SETTINGS
       mode = 'unordered',
-      keeper_path = '/clickhouse/s3queue/events_cloud_v2',
+      keeper_path = '/clickhouse/s3queue/events_cloud_v3',
       s3queue_polling_min_timeout_ms = 1000,
       s3queue_polling_max_timeout_ms = 5000,
       s3queue_processing_threads_num = 2,
@@ -57,22 +58,23 @@ async function create() {
   `)
   console.log('  events_queue created')
 
-  // MV: parse Pipeline JSON envelope → events table
-  // Pipeline wraps events in {"value": {...}} envelope
+  // MV: parse Pipeline JSON → events table
+  // With column named 'value', JSONEachRow already unwraps the envelope
+  // so we extract directly: JSONExtractString(value, 'id') — no nested path
   console.log('Creating materialized view...')
   await client.exec(`
     CREATE MATERIALIZED VIEW IF NOT EXISTS default.events_ingest_mv TO default.events AS
     SELECT
-      coalesce(nullIf(JSONExtractString(raw, 'value', 'id'), ''), toString(generateUUIDv4())) AS id,
-      JSONExtractString(raw, 'value', 'ns') AS ns,
-      parseDateTime64BestEffortOrZero(JSONExtractString(raw, 'value', 'ts'), 3) AS ts,
-      JSONExtractString(raw, 'value', 'type') AS type,
-      JSONExtractString(raw, 'value', 'event') AS event,
-      JSONExtractString(raw, 'value', 'url') AS url,
-      JSONExtractString(raw, 'value', 'source') AS source,
-      JSONExtractString(raw, 'value', 'actor') AS actor,
-      if(JSONHas(raw, 'value', 'data') AND JSONExtractRaw(raw, 'value', 'data') NOT IN ('', 'null'), JSONExtractRaw(raw, 'value', 'data'), '{}') AS data,
-      if(JSONHas(raw, 'value', 'meta') AND JSONExtractRaw(raw, 'value', 'meta') NOT IN ('', 'null'), JSONExtractRaw(raw, 'value', 'meta'), '{}') AS meta
+      coalesce(nullIf(JSONExtractString(value, 'id'), ''), toString(generateUUIDv4())) AS id,
+      JSONExtractString(value, 'ns') AS ns,
+      parseDateTime64BestEffortOrZero(JSONExtractString(value, 'ts'), 3) AS ts,
+      JSONExtractString(value, 'type') AS type,
+      JSONExtractString(value, 'event') AS event,
+      JSONExtractString(value, 'url') AS url,
+      JSONExtractString(value, 'source') AS source,
+      JSONExtractString(value, 'actor') AS actor,
+      if(JSONHas(value, 'data') AND JSONExtractRaw(value, 'data') NOT IN ('', 'null'), JSONExtractRaw(value, 'data'), '{}') AS data,
+      if(JSONHas(value, 'meta') AND JSONExtractRaw(value, 'meta') NOT IN ('', 'null'), JSONExtractRaw(value, 'meta'), '{}') AS meta
     FROM default.events_queue
   `)
   console.log('  events_ingest_mv created')
