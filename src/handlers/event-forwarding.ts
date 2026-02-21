@@ -1,7 +1,8 @@
 /**
- * CDC Event Forwarding to events.do
+ * CDC Event Forwarding via Pipeline
  *
- * Fire-and-forget forwarding of CDC events to the EVENTS service binding.
+ * Fire-and-forget forwarding of CDC events to the EVENTS_PIPELINE binding.
+ * Falls back to service binding HTTP if Pipeline is not available.
  */
 
 export const OPERATION_TYPE_MAP: Record<string, string> = {
@@ -24,19 +25,32 @@ export interface DurableEvent {
   prev?: Record<string, unknown>
 }
 
+export interface PipelineLike {
+  send(records: Record<string, unknown>[]): Promise<void>
+}
+
 export interface EventsBinding {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
 }
 
-export function forwardEvents(binding: EventsBinding, events: DurableEvent[]): Promise<Response | void> {
+export function forwardEvents(binding: PipelineLike | EventsBinding, events: DurableEvent[]): Promise<void> {
   if (events.length === 0) return Promise.resolve()
 
+  // Pipeline binding (preferred)
+  if ('send' in binding) {
+    return binding.send(events as unknown as Record<string, unknown>[]).catch((err: unknown) => {
+      console.warn('[EventForwarding] Pipeline send failed:', err)
+    })
+  }
+
+  // Fallback: service binding HTTP
   return binding
     .fetch('https://events.do/ingest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ events }),
     })
+    .then(() => {})
     .catch((err: unknown) => {
       console.warn('[EventForwarding] EVENTS forwarding failed:', err)
     })
