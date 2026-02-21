@@ -24,16 +24,16 @@ ORDER BY (ns, toDate(event_ts), name, id)
 ;
 CREATE MATERIALIZED VIEW IF NOT EXISTS {database}.scores_mv TO {database}.scores AS
 SELECT
-  JSONExtractString(ev.data, 'id') AS id,
-  JSONExtractString(ev.data, 'traceId') AS trace_id,
-  JSONExtractString(ev.data, 'observationId') AS observation_id,
+  ev.data.id AS id,
+  ev.data.traceId AS trace_id,
+  ev.data.observationId AS observation_id,
   ev.ns AS ns,
-  JSONExtractString(ev.data, 'name') AS name,
-  JSONExtractFloat(ev.data, 'value') AS value,
-  JSONExtractString(ev.data, 'source') AS source,
-  JSONExtractString(ev.data, 'dataType') AS data_type,
-  JSONExtractString(ev.data, 'comment') AS comment,
-  CAST(map(), 'Map(String, String)') AS metadata,
+  ev.data.name AS name,
+  ev.data.value AS value,
+  ev.data.source AS source,
+  ev.data.dataType AS data_type,
+  ev.data.comment AS comment,
+  CAST(ev.data.metadata, 'Map(String, String)') AS metadata,
   ev.actor AS actor,
   ev.ts AS event_ts
 FROM {database}.events AS ev

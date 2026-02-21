@@ -29,7 +29,7 @@ describe('core table migrations', () => {
     expect(result.errors).toEqual([])
     expect(result.applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
     expect(result.skipped).toEqual([])
-  })
+  }, 30000)
 
   it('events table — INSERT and SELECT', async () => {
     await client.exec(
@@ -107,6 +107,40 @@ describe('core table migrations', () => {
     expect(versions.rows).toBe(2)
     expect(versions.data[0].name).toBe('Alice')
     expect(versions.data[1].name).toBe('Alice Smith')
+  })
+
+  it('meta flows through events → versions → data', async () => {
+    await client.exec(
+      `INSERT INTO ${TEST_DB}.events (id, ns, ts, type, event, url, source, actor, data, meta) VALUES (
+        '01TEST000005',
+        'test.do/~e2e',
+        now64(3),
+        'cdc',
+        'Deal.created',
+        'https://test.do/~e2e/Deal/deal_1',
+        'platform',
+        'test',
+        '{"type":"Deal","id":"deal_1","name":"Acme Deal","visibility":"public"}',
+        '{"source":"stripe","traceId":"trace_meta_1","correlationId":"corr_123"}'
+      )`,
+    )
+
+    await sleep(2000)
+
+    // Verify meta flows to versions
+    const versions = await client.query<{ id: string; meta: string }>(
+      `SELECT id, toString(meta) AS meta FROM ${TEST_DB}.versions FINAL WHERE id = 'deal_1' AND ns = 'test.do/~e2e'`,
+    )
+    expect(versions.rows).toBe(1)
+    expect(versions.data[0].meta).toContain('stripe')
+    expect(versions.data[0].meta).toContain('trace_meta_1')
+
+    // Verify meta flows to data
+    const data = await client.query<{ id: string; meta: string }>(
+      `SELECT id, toString(meta) AS meta FROM ${TEST_DB}.data FINAL WHERE id = 'deal_1' AND ns = 'test.do/~e2e'`,
+    )
+    expect(data.rows).toBe(1)
+    expect(data.data[0].meta).toContain('stripe')
   })
 
   it('actions lifecycle — CoalescingMergeTree merges by id', async () => {
@@ -231,7 +265,7 @@ describe('core table migrations', () => {
         '',
         'otel',
         'test',
-        '{"traceId":"abc123trace","spanId":"span001","parentSpanId":"","spanName":"HTTP GET /api","spanKind":"SERVER","serviceName":"api-gateway","resourceAttributes":"{}","spanAttributes":"{}","duration":42,"statusCode":"OK","statusMessage":""}'
+        '{"traceId":"abc123trace","spanId":"span001","parentSpanId":"","spanName":"HTTP GET /api","spanKind":"SERVER","serviceName":"api-gateway","resourceAttributes":{},"spanAttributes":{},"duration":42,"statusCode":"OK","statusMessage":""}'
       )`,
     )
 
@@ -260,7 +294,7 @@ describe('core table migrations', () => {
         '',
         'otel',
         'test',
-        '{"traceId":"abc123trace","spanId":"span001","severityText":"ERROR","severityNumber":17,"serviceName":"api-gateway","body":"Connection refused to upstream","resourceAttributes":"{}","logAttributes":"{}"}'
+        '{"traceId":"abc123trace","spanId":"span001","severityText":"ERROR","severityNumber":17,"serviceName":"api-gateway","body":"Connection refused to upstream","resourceAttributes":{},"logAttributes":{}}'
       )`,
     )
 
@@ -275,6 +309,32 @@ describe('core table migrations', () => {
     expect(logs.data[0].ServiceName).toBe('api-gateway')
     expect(logs.data[0].Body).toBe('Connection refused to upstream')
     expect(Number(logs.data[0].SeverityNumber)).toBe(17)
+  })
+
+  it('session event materializes to sessions', async () => {
+    await client.exec(
+      `INSERT INTO ${TEST_DB}.events (id, ns, ts, type, event, url, source, actor, data) VALUES (
+        '01TEST000115',
+        'test.do/~e2e',
+        now64(3),
+        'session',
+        'session',
+        '',
+        'otel',
+        'test',
+        '{"sessionId":"sess_abc123","serviceName":"web-app","body":"session-start","resourceAttributes":{},"logAttributes":{"browser":"chrome"}}'
+      )`,
+    )
+
+    await sleep(2000)
+
+    const sessions = await client.query<{ SessionId: string; ServiceName: string; Body: string }>(
+      `SELECT SessionId, ServiceName, Body FROM ${TEST_DB}.sessions WHERE SessionId = 'sess_abc123'`,
+    )
+    expect(sessions.rows).toBe(1)
+    expect(sessions.data[0].SessionId).toBe('sess_abc123')
+    expect(sessions.data[0].ServiceName).toBe('web-app')
+    expect(sessions.data[0].Body).toBe('session-start')
   })
 
   it('LLM generation materializes to observations', async () => {

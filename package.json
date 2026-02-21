@@ -28,6 +28,7 @@
     "build": "tsc",
     "ch": "tsx scripts/ch.ts",
     "clean": "rm -rf dist",
+    "test": "tsx scripts/test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

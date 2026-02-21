@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS {database}.rels (
   \`to\`        String,
   reverse     String,
   type        Nullable(String),
-  meta        Nullable(String),
+  meta        Nullable(JSON),
   ns          String,
   v           UInt64,
   e           String
@@ -19,12 +19,12 @@ ORDER BY (\`to\`, predicate, \`from\`)
 ;
 CREATE MATERIALIZED VIEW IF NOT EXISTS {database}.rels_mv TO {database}.rels AS
 SELECT
-  JSONExtractString(ev.data, 'from') AS \`from\`,
-  JSONExtractString(ev.data, 'predicate') AS predicate,
-  JSONExtractString(ev.data, 'to') AS \`to\`,
-  JSONExtractString(ev.data, 'reverse') AS reverse,
-  JSONExtractString(ev.data, 'type') AS type,
-  JSONExtractRaw(ev.data, 'meta') AS meta,
+  ev.data.from AS \`from\`,
+  ev.data.predicate AS predicate,
+  ev.data.to AS \`to\`,
+  ev.data.reverse AS reverse,
+  ev.data.type AS type,
+  ev.data.meta AS meta,
   ev.ns AS ns,
   toUInt64(toUnixTimestamp64Milli(ev.ts)) AS v,
   ev.id AS e

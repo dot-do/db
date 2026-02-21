@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS {database}.events (
   url       String,
   source    String,
   actor     String,
-  data      String DEFAULT '{}',
-  meta      String DEFAULT '{}',
+  data      JSON,
+  meta      JSON,
   file      String DEFAULT '',
   ingested  DateTime64(3) DEFAULT now64(3)
 ) ENGINE = ReplacingMergeTree()

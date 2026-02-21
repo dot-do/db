@@ -21,11 +21,11 @@ TTL toDate(Timestamp) + toIntervalDay(30)
 CREATE MATERIALIZED VIEW IF NOT EXISTS {database}.sessions_mv TO {database}.sessions AS
 SELECT
   ev.ts AS Timestamp,
-  JSONExtractString(ev.data, 'sessionId') AS SessionId,
-  JSONExtractString(ev.data, 'serviceName') AS ServiceName,
-  JSONExtractString(ev.data, 'body') AS Body,
-  JSONExtract(ev.data, 'resourceAttributes', 'Map(String, String)') AS ResourceAttributes,
-  JSONExtract(ev.data, 'logAttributes', 'Map(String, String)') AS LogAttributes,
+  ev.data.sessionId AS SessionId,
+  ev.data.serviceName AS ServiceName,
+  ev.data.body AS Body,
+  CAST(ev.data.resourceAttributes, 'Map(String, String)') AS ResourceAttributes,
+  CAST(ev.data.logAttributes, 'Map(String, String)') AS LogAttributes,
   ev.ns AS ns
 FROM {database}.events AS ev
 WHERE ev.type = 'session'

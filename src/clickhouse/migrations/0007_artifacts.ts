@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS {database}.artifacts (
   format      String,
   ns          String,
   name        Nullable(String),
-  data        String DEFAULT '{}',
+  data        JSON,
   v           UInt64,
   e           String
 ) ENGINE = ReplacingMergeTree(v)

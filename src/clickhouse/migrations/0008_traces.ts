@@ -29,17 +29,17 @@ TTL toDate(Timestamp) + toIntervalDay(30)
 CREATE MATERIALIZED VIEW IF NOT EXISTS {database}.traces_mv TO {database}.traces AS
 SELECT
   ev.ts AS Timestamp,
-  JSONExtractString(ev.data, 'traceId') AS TraceId,
-  JSONExtractString(ev.data, 'spanId') AS SpanId,
-  JSONExtractString(ev.data, 'parentSpanId') AS ParentSpanId,
-  JSONExtractString(ev.data, 'spanName') AS SpanName,
-  JSONExtractString(ev.data, 'spanKind') AS SpanKind,
-  JSONExtractString(ev.data, 'serviceName') AS ServiceName,
-  JSONExtract(ev.data, 'resourceAttributes', 'Map(String, String)') AS ResourceAttributes,
-  JSONExtract(ev.data, 'spanAttributes', 'Map(String, String)') AS SpanAttributes,
-  JSONExtractUInt(ev.data, 'duration') AS Duration,
-  JSONExtractString(ev.data, 'statusCode') AS StatusCode,
-  JSONExtractString(ev.data, 'statusMessage') AS StatusMessage,
+  ev.data.traceId AS TraceId,
+  ev.data.spanId AS SpanId,
+  ev.data.parentSpanId AS ParentSpanId,
+  ev.data.spanName AS SpanName,
+  ev.data.spanKind AS SpanKind,
+  ev.data.serviceName AS ServiceName,
+  CAST(ev.data.resourceAttributes, 'Map(String, String)') AS ResourceAttributes,
+  CAST(ev.data.spanAttributes, 'Map(String, String)') AS SpanAttributes,
+  ev.data.duration AS Duration,
+  ev.data.statusCode AS StatusCode,
+  ev.data.statusMessage AS StatusMessage,
   ev.ns AS ns
 FROM {database}.events AS ev
 WHERE ev.type = 'otel.span'

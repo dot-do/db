@@ -27,14 +27,14 @@ TTL toDate(Timestamp) + toIntervalDay(30)
 CREATE MATERIALIZED VIEW IF NOT EXISTS {database}.logs_mv TO {database}.logs AS
 SELECT
   ev.ts AS Timestamp,
-  JSONExtractString(ev.data, 'traceId') AS TraceId,
-  JSONExtractString(ev.data, 'spanId') AS SpanId,
-  JSONExtractString(ev.data, 'severityText') AS SeverityText,
-  toUInt8(JSONExtractUInt(ev.data, 'severityNumber')) AS SeverityNumber,
-  JSONExtractString(ev.data, 'serviceName') AS ServiceName,
-  JSONExtractString(ev.data, 'body') AS Body,
-  JSONExtract(ev.data, 'resourceAttributes', 'Map(String, String)') AS ResourceAttributes,
-  JSONExtract(ev.data, 'logAttributes', 'Map(String, String)') AS LogAttributes,
+  ev.data.traceId AS TraceId,
+  ev.data.spanId AS SpanId,
+  ev.data.severityText AS SeverityText,
+  toUInt8(ev.data.severityNumber) AS SeverityNumber,
+  ev.data.serviceName AS ServiceName,
+  ev.data.body AS Body,
+  CAST(ev.data.resourceAttributes, 'Map(String, String)') AS ResourceAttributes,
+  CAST(ev.data.logAttributes, 'Map(String, String)') AS LogAttributes,
   ev.ns AS ns
 FROM {database}.events AS ev
 WHERE ev.type = 'otel.log'
