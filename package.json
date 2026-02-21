@@ -1,7 +1,7 @@
 {
   "name": "@dotdo/db",
-  "version": "0.1.0",
-  "description": "ParqueDB wrapper for dotdo ecosystem",
+  "version": "0.2.0",
+  "description": "DB Durable Object + ClickHouse client for the .do ecosystem",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,9 +10,9 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./backends": {
-      "import": "./dist/backends.js",
-      "types": "./dist/backends.d.ts"
+    "./clickhouse": {
+      "import": "./dist/clickhouse/index.js",
+      "types": "./dist/clickhouse/index.d.ts"
     },
     "./do": {
       "workerd": "./dist/do.js",
@@ -26,6 +26,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "ch": "tsx scripts/ch.ts",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit"
   },
@@ -37,9 +38,9 @@
     "typescript": "^5.7.2"
   },
   "keywords": [
-    "parquedb",
     "database",
-    "parquet",
+    "clickhouse",
+    "durable-objects",
     "dotdo"
   ],
   "license": "MIT"
