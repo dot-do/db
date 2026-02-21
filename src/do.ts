@@ -1,7 +1,8 @@
 /**
- * DatabaseDO — Durable Object for headless.ly database coordination
+ * DB — Durable Object for headless.ly database coordination
  *
- * Extends ParqueDBDO (the core event-sourced DB engine) and adds:
+ * Standalone Durable Object (no ParqueDB dependency) that provides:
+ * - Entity CRUD via raw SqlStorage on an `entities` table
  * - CDC event logging to a separate events table (for events.do forwarding)
  * - Write mutex (serializes mutations)
  * - Multi-tenancy (namespace/systemSlug from request headers)
@@ -9,16 +10,24 @@
  * - Event compaction via alarm()
  *
  * Architecture:
- * - ParqueDBDO: event-sourced entity storage (entities table + events_wal)
- * - DatabaseDO: CDC event log + multi-tenancy + protocol routing
+ * - `entities` table: id (PK), type, data (JSON), created_at, updated_at, deleted_at (soft deletes)
+ * - `events` table: CDC event log for sync, time-travel, and forwarding
+ * - `metadata` table: namespace, system slug, compaction state
  *
  * One DO per system per org (e.g. "org_123:crm", "org_123:finance").
  */
 
-import { ParqueDBDO, type CacheInvalidationSignal } from '../parquedb/dist/worker/ParqueDBDO'
-import { DB, DOSqliteBackend } from '../parquedb/dist/index'
+import { DurableObject } from 'cloudflare:workers'
 import { validateEntityType } from './lib/entity-types'
-import { DEFAULT_RETENTION_DAYS, MIN_EVENTS_PER_ENTITY, COMPACTION_ALARM_INTERVAL_MS, buildCompactionQuery, computeCompactionCutoff, shouldCompact } from './lib/compaction'
+import { generateEntityId } from './lib/id'
+import {
+  DEFAULT_RETENTION_DAYS,
+  MIN_EVENTS_PER_ENTITY,
+  COMPACTION_ALARM_INTERVAL_MS,
+  buildCompactionQuery,
+  computeCompactionCutoff,
+  shouldCompact,
+} from './lib/compaction'
 import type { DOContext, ParqueDBCollection } from './handlers/handler-context'
 import { EventLogger, queryEventsFromWal } from './handlers/event-logger'
 import type { EventsBinding } from './handlers/event-forwarding'
@@ -32,62 +41,27 @@ export type { EventLoggerDeps } from './handlers/event-logger'
 export { EventLogger, queryEventsFromWal } from './handlers/event-logger'
 export { validateEntityType, isValidEntityType, toEntityType, DANGEROUS_TYPE_NAMES } from './lib/entity-types'
 export { generateEntityId } from './lib/id'
-export { DEFAULT_RETENTION_DAYS, MIN_EVENTS_PER_ENTITY, COMPACTION_ALARM_INTERVAL_MS, buildCompactionQuery, computeCompactionCutoff, shouldCompact, COMPACTION_WRITE_INTERVAL, COMPACTION_COOLDOWN_MS } from './lib/compaction'
+export {
+  DEFAULT_RETENTION_DAYS,
+  MIN_EVENTS_PER_ENTITY,
+  COMPACTION_ALARM_INTERVAL_MS,
+  buildCompactionQuery,
+  computeCompactionCutoff,
+  shouldCompact,
+  COMPACTION_WRITE_INTERVAL,
+  COMPACTION_COOLDOWN_MS,
+} from './lib/compaction'
 export { reconstructFromEvents, type EventRow, type ReconstructionResult } from './lib/time-travel'
-export { purgeExpiredEntities, previewPurge, DEFAULT_PURGE_RETENTION_DAYS, type PurgeContext, type PurgeOptions, type PurgeResult, type PreviewResult } from './lib/purge-policy'
+export {
+  purgeExpiredEntities,
+  previewPurge,
+  DEFAULT_PURGE_RETENTION_DAYS,
+  type PurgeContext,
+  type PurgeOptions,
+  type PurgeResult,
+  type PreviewResult,
+} from './lib/purge-policy'
 export { buildDurableEvent, forwardEvents, mapOperationToEventType, OPERATION_TYPE_MAP } from './handlers/event-forwarding'
-export type { CacheInvalidationSignal }
-
-// =========================================================================
-// SqlStorage Adapter
-// =========================================================================
-
-/**
- * Adapts CF Workers SqlStorage (exec-based) to DOSqliteBackend's expected
- * interface (prepare/bind/first/all/run).
- */
-function adaptSqlStorage(sql: SqlStorage) {
-  return {
-    exec(query: string): void {
-      sql.exec(query)
-    },
-    prepare(query: string) {
-      return {
-        bind(...params: unknown[]) {
-          return {
-            first<T = Record<string, unknown>>(): T | null {
-              const rows = sql.exec(query, ...params).toArray()
-              return rows.length > 0 ? (rows[0] as T) : null
-            },
-            all<T = Record<string, unknown>>(): { results: T[] } {
-              return { results: sql.exec(query, ...params).toArray() as T[] }
-            },
-            run(): { changes: number } {
-              const cursor = sql.exec(query, ...params)
-              return { changes: cursor.rowsWritten }
-            },
-          }
-        },
-      }
-    },
-  }
-}
-
-// =========================================================================
-// Entity Normalization Helpers
-// =========================================================================
-
-/** Strip R2 path prefix from $id (e.g. "namespace/Contact_abc" -> "Contact_abc") */
-function normalizeEntity<T extends Record<string, unknown>>(entity: T): T {
-  if (entity.$id && typeof entity.$id === 'string' && entity.$id.includes('/')) {
-    return { ...entity, $id: entity.$id.split('/').pop() }
-  }
-  return entity
-}
-
-function normalizeEntities<T extends Record<string, unknown>>(entities: T[]): T[] {
-  return entities.map((e) => normalizeEntity(e))
-}
 
 // =========================================================================
 // Response Helpers
@@ -110,27 +84,95 @@ async function parseJsonBody<T>(request: Request): Promise<T | Response> {
 }
 
 // =========================================================================
-// DatabaseDO Env Extension
+// Filter Matching
 // =========================================================================
 
 /**
- * Env bindings that DatabaseDO expects beyond ParqueDBDO's base Env.
- * Workers that deploy DatabaseDO should include these in their wrangler.jsonc.
+ * Evaluate a MongoDB-style filter against a data object.
+ * Supports: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $regex, direct equality.
  */
-export interface DatabaseDOEnv {
+function matchesFilter(data: Record<string, unknown>, filter: Record<string, unknown>): boolean {
+  for (const [key, condition] of Object.entries(filter)) {
+    const value = data[key]
+
+    if (condition === null || condition === undefined || typeof condition !== 'object' || Array.isArray(condition)) {
+      // Direct equality
+      if (value !== condition) return false
+      continue
+    }
+
+    const ops = condition as Record<string, unknown>
+    for (const [op, expected] of Object.entries(ops)) {
+      switch (op) {
+        case '$eq':
+          if (value !== expected) return false
+          break
+        case '$ne':
+          if (value === expected) return false
+          break
+        case '$gt':
+          if (typeof value !== 'number' || typeof expected !== 'number' || value <= expected) return false
+          break
+        case '$gte':
+          if (typeof value !== 'number' || typeof expected !== 'number' || value < expected) return false
+          break
+        case '$lt':
+          if (typeof value !== 'number' || typeof expected !== 'number' || value >= expected) return false
+          break
+        case '$lte':
+          if (typeof value !== 'number' || typeof expected !== 'number' || value > expected) return false
+          break
+        case '$in':
+          if (!Array.isArray(expected) || !expected.includes(value)) return false
+          break
+        case '$nin':
+          if (!Array.isArray(expected) || expected.includes(value)) return false
+          break
+        case '$exists':
+          if (expected && value === undefined) return false
+          if (!expected && value !== undefined) return false
+          break
+        case '$regex': {
+          if (typeof value !== 'string' || typeof expected !== 'string') return false
+          const re = new RegExp(expected)
+          if (!re.test(value)) return false
+          break
+        }
+        default:
+          // Unknown operator — treat as direct equality on nested field
+          if (value !== expected) return false
+          break
+      }
+    }
+  }
+  return true
+}
+
+// =========================================================================
+// DBEnv Extension
+// =========================================================================
+
+/**
+ * Env bindings that DB expects.
+ * Workers that deploy DB should include these in their wrangler.jsonc.
+ */
+export interface DBEnv {
   /** Events service binding for CDC event forwarding */
   EVENTS?: { fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> }
   /** R2 bucket for event archival during compaction */
   DB_BUCKET?: { put(key: string, body: string): Promise<unknown> }
 }
 
+// Keep backward-compatible alias
+export type DatabaseDOEnv = DBEnv
+
 // =========================================================================
-// DatabaseDO
+// DB Durable Object
 // =========================================================================
 
-export class DatabaseDO extends ParqueDBDO {
-  /** ParqueDB instance via DB() factory with DOSqliteBackend */
-  protected db: ReturnType<typeof DB> | null = null
+export class DB extends DurableObject {
+  /** Raw SqlStorage handle */
+  protected sql: SqlStorage
 
   /** Tenant namespace */
   protected _namespace: string | null = null
@@ -144,15 +186,16 @@ export class DatabaseDO extends ParqueDBDO {
   /** Write mutex — serializes mutation operations */
   protected _writeTail: Promise<void> = Promise.resolve()
 
-  constructor(state: DurableObjectState, env: Record<string, unknown>) {
-    super(state, env as never)
-    this.initCDCTables()
+  constructor(ctx: DurableObjectState, env: Record<string, unknown>) {
+    super(ctx, env)
+    this.sql = ctx.storage.sql
+    this.initTables()
 
     this.eventLogger = new EventLogger({
       sql: this.sql,
-      eventsBinding: (env as DatabaseDOEnv).EVENTS as EventsBinding | undefined,
+      eventsBinding: (env as DBEnv).EVENTS as EventsBinding | undefined,
       waitUntil: (p) => this.ctx.waitUntil(p),
-      doIdentity: { id: this.ctx.id.toString(), class: 'DatabaseDO' },
+      doIdentity: { id: this.ctx.id.toString(), class: 'DB' },
       onCompactionThreshold: () => this.maybeCompact(),
     })
 
@@ -165,9 +208,6 @@ export class DatabaseDO extends ParqueDBDO {
         this._systemSlug = row.value as string
       }
     }
-    if (this._namespace) {
-      this.initDB(this._namespace)
-    }
 
     // Schedule the first compaction alarm if none is set
     this.ctx.storage.getAlarm().then((alarm) => {
@@ -175,6 +215,44 @@ export class DatabaseDO extends ParqueDBDO {
         this.ctx.storage.setAlarm(Date.now() + COMPACTION_ALARM_INTERVAL_MS)
       }
     })
+  }
+
+  // =========================================================================
+  // Table Initialization
+  // =========================================================================
+
+  protected initTables(): void {
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    `)
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS entities (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        data TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT,
+        updated_at TEXT,
+        deleted_at TEXT
+      )
+    `)
+    this.sql.exec('CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type)')
+    this.sql.exec('CREATE INDEX IF NOT EXISTS idx_entities_type_deleted ON entities(type, deleted_at)')
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS events (
+        id TEXT PRIMARY KEY,
+        timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+        operation TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        data TEXT,
+        checksum TEXT
+      )
+    `)
+    this.sql.exec('CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id)')
+    this.sql.exec('CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp)')
   }
 
   // =========================================================================
@@ -191,65 +269,162 @@ export class DatabaseDO extends ParqueDBDO {
   }
 
   // =========================================================================
-  // DB Initialization
+  // Namespace Initialization
   // =========================================================================
 
-  protected initDB(namespace: string): void {
-    const adapted = adaptSqlStorage(this.sql)
-    const storage = new DOSqliteBackend(adapted as unknown as ConstructorParameters<typeof DOSqliteBackend>[0], { prefix: `${namespace}/` })
-    this.db = DB({ schema: 'flexible' }, { storage })
-  }
-
-  protected ensureDB(request: Request): ReturnType<typeof DB> {
+  protected ensureNamespace(request: Request): void {
     const ns = request.headers.get('X-Namespace')
     const system = request.headers.get('X-System')
 
     if (ns && !this._namespace) {
       this._namespace = ns
       this.sql.exec('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)', 'namespace', ns)
-      this.initDB(ns)
     }
     if (system && !this._systemSlug) {
       this._systemSlug = system
       this.sql.exec('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)', 'system', system)
     }
-    if (!this.db) {
-      const fallback = this._namespace ?? this.ctx.id.toString()
-      this.initDB(fallback)
-    }
-    return this.db!
   }
 
-  protected initCDCTables(): void {
-    this.sql.exec(`
-      CREATE TABLE IF NOT EXISTS metadata (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      )
-    `)
-    this.sql.exec(`
-      CREATE TABLE IF NOT EXISTS events (
-        id TEXT PRIMARY KEY,
-        timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-        operation TEXT NOT NULL,
-        entity_type TEXT NOT NULL,
-        entity_id TEXT NOT NULL,
-        data TEXT,
-        checksum TEXT
-      )
-    `)
-    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id)`)
-    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp)`)
+  // =========================================================================
+  // Collection Interface (ParqueDBCollection-compatible)
+  // =========================================================================
+
+  protected getCollection(type: string): ParqueDBCollection {
+    validateEntityType(type)
+    const sql = this.sql
+
+    return {
+      async find(
+        filter?: Record<string, unknown>,
+        options?: Record<string, unknown>,
+      ): Promise<{ items: unknown[]; total?: number; hasMore?: boolean }> {
+        const limit = (options?.limit as number) ?? 100
+        const offset = (options?.skip as number) ?? (options?.offset as number) ?? 0
+        const sort = options?.sort as Record<string, 1 | -1> | undefined
+
+        // Query all non-deleted entities of this type
+        const rows = sql.exec('SELECT id, data, created_at, updated_at FROM entities WHERE type = ? AND deleted_at IS NULL', type).toArray()
+
+        // Parse JSON data and attach meta fields
+        let items: Record<string, unknown>[] = rows.map((row) => {
+          const parsed = row.data ? JSON.parse(row.data as string) : {}
+          return {
+            ...parsed,
+            $id: row.id as string,
+            $type: type,
+            $createdAt: row.created_at as string,
+            $updatedAt: row.updated_at as string,
+          }
+        })
+
+        // Apply filter in-memory (MongoDB-style)
+        if (filter && Object.keys(filter).length > 0) {
+          items = items.filter((item) => matchesFilter(item, filter))
+        }
+
+        const total = items.length
+
+        // Apply sort
+        if (sort) {
+          const sortEntries = Object.entries(sort)
+          items.sort((a, b) => {
+            for (const [field, dir] of sortEntries) {
+              const aVal = a[field]
+              const bVal = b[field]
+              if (aVal === bVal) continue
+              if (aVal === undefined || aVal === null) return dir === 1 ? 1 : -1
+              if (bVal === undefined || bVal === null) return dir === 1 ? -1 : 1
+              if (aVal < bVal) return dir === 1 ? -1 : 1
+              if (aVal > bVal) return dir === 1 ? 1 : -1
+            }
+            return 0
+          })
+        }
+
+        // Apply pagination
+        const paged = items.slice(offset, offset + limit)
+        const hasMore = offset + limit < total
+
+        return { items: paged, total, hasMore }
+      },
+
+      async findOne(filter?: Record<string, unknown>): Promise<unknown | null> {
+        const result = await this.find(filter, { limit: 1 })
+        return result.items[0] ?? null
+      },
+
+      async get(id: string): Promise<Record<string, unknown> | null> {
+        const rows = sql.exec('SELECT id, data, created_at, updated_at FROM entities WHERE id = ? AND deleted_at IS NULL', id).toArray()
+        if (rows.length === 0) return null
+        const row = rows[0]
+        const parsed = row.data ? JSON.parse(row.data as string) : {}
+        return {
+          ...parsed,
+          $id: row.id as string,
+          $type: type,
+          $createdAt: row.created_at as string,
+          $updatedAt: row.updated_at as string,
+        }
+      },
+
+      async create(data: Record<string, unknown>): Promise<unknown> {
+        const id = (data.$id as string) ?? generateEntityId(type)
+        const now = new Date().toISOString()
+
+        // Strip meta fields from data payload
+        const { $id: _id, $type: _type, $createdAt: _ca, $updatedAt: _ua, $version: _v, $createdBy: _cb, $updatedBy: _ub, ...rest } = data
+        const jsonData = JSON.stringify(rest)
+
+        sql.exec('INSERT INTO entities (id, type, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', id, type, jsonData, now, now)
+
+        return {
+          ...rest,
+          $id: id,
+          $type: type,
+          $createdAt: now,
+          $updatedAt: now,
+        }
+      },
+
+      async update(id: string, data: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+        // Fetch existing
+        const rows = sql.exec('SELECT id, data, created_at, updated_at FROM entities WHERE id = ? AND deleted_at IS NULL', id).toArray()
+        if (rows.length === 0) return null
+        const row = rows[0]
+        const existing = row.data ? JSON.parse(row.data as string) : {}
+        const now = new Date().toISOString()
+
+        // Strip meta fields from incoming data
+        const { $id: _id, $type: _type, $createdAt: _ca, $updatedAt: _ua, $version: _v, $createdBy: _cb, $updatedBy: _ub, ...rest } = data
+        const merged = { ...existing, ...rest }
+        const jsonData = JSON.stringify(merged)
+
+        sql.exec('UPDATE entities SET data = ?, updated_at = ? WHERE id = ?', jsonData, now, id)
+
+        return {
+          ...merged,
+          $id: id,
+          $type: type,
+          $createdAt: row.created_at as string,
+          $updatedAt: now,
+        }
+      },
+
+      async delete(id: string): Promise<{ deletedCount: number }> {
+        // Soft delete
+        const now = new Date().toISOString()
+        sql.exec('UPDATE entities SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', now, id)
+        const changesRow = sql.exec('SELECT changes() as cnt').toArray()
+        const deletedCount = (changesRow[0]?.cnt as number) ?? 0
+        return { deletedCount }
+      },
+    }
   }
 
   // =========================================================================
   // DOContext Implementation
   // =========================================================================
-
-  protected getCollection(type: string): ParqueDBCollection {
-    validateEntityType(type)
-    return (this.db as unknown as Record<string, ParqueDBCollection>)[type]
-  }
 
   /**
    * Build the DOContext that extracted handler modules use.
@@ -258,8 +433,8 @@ export class DatabaseDO extends ParqueDBDO {
     return {
       sql: this.sql,
       getCollection: (type: string) => this.getCollection(type),
-      normalizeEntity,
-      normalizeEntities,
+      normalizeEntity: <T extends Record<string, unknown>>(entity: T): T => entity,
+      normalizeEntities: <T extends Record<string, unknown>>(entities: T[]): T[] => entities,
       safeLogEvent: (op, type, entityId, data?, prev?, timestamp?) => this.eventLogger.safeLogEvent(op, type, entityId, data, prev, timestamp),
       beginEventBatch: () => this.eventLogger.beginEventBatch(),
       flushEventBatch: () => this.eventLogger.flushEventBatch(),
@@ -282,10 +457,10 @@ export class DatabaseDO extends ParqueDBDO {
    * (e.g., capnweb RPC, batch RPC, custom endpoints).
    *
    * By default, handles basic REST entity operations.
-   * Override onRestRequest() to customize REST routing.
+   * Override onRequest() to customize REST routing.
    */
   async fetch(request: Request): Promise<Response> {
-    this.ensureDB(request)
+    this.ensureNamespace(request)
 
     const url = new URL(request.url)
     const path = url.pathname
@@ -301,29 +476,32 @@ export class DatabaseDO extends ParqueDBDO {
   // =========================================================================
   // RPC-friendly async wrappers
   //
-  // ParqueDBDO's findEntitiesFromSqlite/countEntitiesFromSqlite/getEntityFromSqlite
-  // are synchronous, which means they can't be called via cross-worker DO RPC
-  // (Cloudflare requires RPC methods to return Promises). These async wrappers
-  // delegate to the synchronous methods and make them RPC-accessible.
+  // These async methods make entity operations accessible via cross-worker
+  // DO RPC (Cloudflare requires RPC methods to return Promises).
   // =========================================================================
 
   async find(
-    ns: string,
+    type: string,
     filter?: Record<string, unknown>,
     options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
   ): Promise<{ items: unknown[]; total: number; hasMore: boolean }> {
-    await this.ensureInitialized()
-    return this.findEntitiesFromSqlite(ns, { ...options, filter })
+    const collection = this.getCollection(type)
+    const result = await collection.find(filter, { ...options, skip: options?.offset })
+    return {
+      items: result.items,
+      total: (result.total as number) ?? 0,
+      hasMore: (result.hasMore as boolean) ?? false,
+    }
   }
 
-  async countEntities(ns: string): Promise<number> {
-    await this.ensureInitialized()
-    return this.countEntitiesFromSqlite(ns)
+  async countEntities(type: string): Promise<number> {
+    const rows = this.sql.exec('SELECT COUNT(*) as cnt FROM entities WHERE type = ? AND deleted_at IS NULL', type).toArray()
+    return (rows[0]?.cnt as number) ?? 0
   }
 
-  async getEntity(ns: string, id: string): Promise<unknown> {
-    await this.ensureInitialized()
-    return this.getEntityFromSqlite(ns, id)
+  async getEntity(type: string, id: string): Promise<unknown> {
+    const collection = this.getCollection(type)
+    return collection.get(id)
   }
 
   /**
@@ -339,21 +517,14 @@ export class DatabaseDO extends ParqueDBDO {
   // =========================================================================
 
   async alarm(): Promise<void> {
-    // Call parent alarm for ParqueDBDO flush operations
-    try {
-      await super.alarm()
-    } catch {
-      // Parent alarm may not be implemented
-    }
-
     // CDC event compaction
     try {
       const result = await this.compactEvents()
       if (result.deleted > 0) {
-        console.log(`[DatabaseDO] Alarm compaction: deleted ${result.deleted} events`)
+        console.log(`[DB] Alarm compaction: deleted ${result.deleted} events`)
       }
     } catch (err) {
-      console.warn('[DatabaseDO] Alarm compaction failed:', err)
+      console.warn('[DB] Alarm compaction failed:', err)
     }
 
     this.ctx.storage.setAlarm(Date.now() + COMPACTION_ALARM_INTERVAL_MS)
@@ -384,14 +555,14 @@ export class DatabaseDO extends ParqueDBDO {
         )
         .toArray()
 
-      const dbBucket = (this.env as unknown as DatabaseDOEnv).DB_BUCKET
+      const dbBucket = (this.env as unknown as DBEnv).DB_BUCKET
       if (eventsToDelete.length > 0 && dbBucket) {
         const archiveKey = `${this._namespace ?? 'default'}/archive/events-${compactedAt.replace(/[:.]/g, '-')}.ndjson`
         const ndjson = eventsToDelete.map((row) => JSON.stringify(row)).join('\n')
         await dbBucket.put(archiveKey, ndjson)
       }
     } catch (err) {
-      console.warn('[DatabaseDO] Event archival failed (proceeding with compaction):', err)
+      console.warn('[DB] Event archival failed (proceeding with compaction):', err)
     }
 
     const deleteQuery = buildCompactionQuery()
@@ -407,7 +578,10 @@ export class DatabaseDO extends ParqueDBDO {
 
   protected maybeCompact(): void {
     this.compactEvents().catch((err) => {
-      console.warn('[DatabaseDO] Write-triggered compaction failed:', err)
+      console.warn('[DB] Write-triggered compaction failed:', err)
     })
   }
 }
+
+// Backward-compatible alias
+export { DB as DatabaseDO }

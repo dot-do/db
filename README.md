@@ -1,20 +1,27 @@
-# .do/db
+# @dotdo/db v0.2.0
 
-Database infrastructure for the .do ecosystem. DB Durable Object for WAL + CDC event logging, ClickHouse client for analytics backend, Cloudflare Pipeline for zero-cost ingestion.
+Database infrastructure for the .do ecosystem. ClickHouse HTTP client for analytics queries and migrations, DB Durable Object for WAL + CDC event logging, Cloudflare Pipeline for zero-cost ingestion.
 
 ## Architecture
 
 ```
-DB (Durable Object, SQLite)
+@dotdo/db (single package, three export paths)
+  ├─ @dotdo/db              — ClickHouseClient + DB DO + utilities
+  ├─ @dotdo/db/clickhouse   — ClickHouseClient, migrate(), types
+  └─ @dotdo/db/do           — DB Durable Object (workerd entry)
+
+DB (Durable Object, raw SqlStorage)
   ├─ Entity storage (event-sourced)
   ├─ CDC event log → Pipeline → ClickHouse
   ├─ Write mutex + multi-tenancy
-  └─ Compaction via alarm()
+  ├─ Compaction via alarm()
+  ├─ Time-travel (event reconstruction)
+  └─ Purge policy (TTL-based expiry)
 
-@dotdo/clickhouse (packages/clickhouse)
+ClickHouse HTTP Client (src/clickhouse/)
   ├─ HTTP client (query, exec, ping)
   ├─ Versioned migrations (0001-0012)
-  └─ BatchInserter for bulk writes
+  └─ Database-per-tenant support
 
 Pipeline (headlessly_events)
   → R2 (batched NDJSON)
@@ -22,12 +29,13 @@ Pipeline (headlessly_events)
   → ClickHouse (compound partitions, native JSON)
 ```
 
-## Packages
+## Exports
 
-| Package | Path | Purpose |
-|---------|------|---------|
-| `@dotdo/db` | `.` | DB Durable Object + entity storage |
-| `@dotdo/clickhouse` | `packages/clickhouse/` | ClickHouse HTTP client + migrations |
+```typescript
+import { ClickHouseClient, migrate, DB } from '@dotdo/db'            // Main entry
+import { ClickHouseClient, migrate } from '@dotdo/db/clickhouse'     // ClickHouse only
+import { DB } from '@dotdo/db/do'                                    // DB Durable Object (workerd)
+```
 
 ## ClickHouse Schema
 
@@ -47,14 +55,22 @@ Native JSON column (`data JSON`) with dot-access queries. MV-backed aggregation 
 ```bash
 pnpm build               # tsc
 pnpm typecheck           # tsc --noEmit
-cd packages/clickhouse && pnpm test   # ClickHouse client tests
+pnpm ch "SELECT 1"       # Query ClickHouse Cloud via CLI
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
+| `src/index.ts` | Main entry point (re-exports everything) |
 | `src/do.ts` | DB Durable Object (entity storage + CDC) |
-| `packages/clickhouse/src/client.ts` | ClickHouse HTTP client |
-| `packages/clickhouse/src/migrate.ts` | Migration runner |
-| `packages/clickhouse/src/migrations/` | Versioned schema migrations |
+| `src/clickhouse/client.ts` | ClickHouse HTTP client |
+| `src/clickhouse/migrate.ts` | Migration runner |
+| `src/clickhouse/migrations/` | Versioned schema migrations (0001-0012) |
+| `src/clickhouse/types.ts` | ClickHouseConfig, QueryResult, ExecResult |
+| `src/lib/compaction.ts` | Event log compaction logic |
+| `src/lib/time-travel.ts` | Event reconstruction (time-travel queries) |
+| `src/lib/purge-policy.ts` | TTL-based entity purge |
+| `src/lib/entity-types.ts` | Entity type validation |
+| `src/lib/id.ts` | Entity ID generation (sqids) |
+| `src/handlers/` | Event logger, forwarding, handler context |
