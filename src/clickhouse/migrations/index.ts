@@ -10,5 +10,18 @@ import { migration as m0009 } from './0009_logs'
 import { migration as m0010 } from './0010_sessions'
 import { migration as m0011 } from './0011_observations'
 import { migration as m0012 } from './0012_scores'
+// Compat layers (001xx)
+import { migration as m00100 } from './00100_segment'
+import { migration as m00101 } from './00101_experimentation'
+import { migration as m00102 } from './00102_billing'
+import { migration as m00103 } from './00103_epcis'
+import { migration as m00104 } from './00104_web_analytics'
+import { migration as m00105 } from './00105_github'
+import { migration as m00106 } from './00106_svix'
+import { migration as m00107 } from './00107_unkey'
+import { migration as m00108 } from './00108_api'
+import { migration as m00109 } from './00109_helicone'
+import { migration as m00110 } from './00110_langfuse'
+import { migration as m00111 } from './00111_rpc'
 
-export const migrations = [m0001, m0002, m0003, m0004, m0005, m0006, m0007, m0008, m0009, m0010, m0011, m0012]
+export const migrations = [m0001, m0002, m0003, m0004, m0005, m0006, m0007, m0008, m0009, m0010, m0011, m0012, m00100, m00101, m00102, m00103, m00104, m00105, m00106, m00107, m00108, m00109, m00110, m00111]
