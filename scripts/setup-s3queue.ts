@@ -33,7 +33,7 @@ if (!r2Ak || !r2Sk) {
 
 const client = new ClickHouseClient({ endpoint, user, password, database: 'default' })
 const r2Base = 'https://b6641681fe423910342b9ffa1364c76d.r2.cloudflarestorage.com'
-const queueUrl = `${r2Base}/events/incoming/*`
+const queueUrl = `${r2Base}/events/incoming/**`
 
 const step = process.argv[2] || 'help'
 
@@ -50,7 +50,7 @@ async function create() {
     ) ENGINE = S3Queue('${queueUrl}', '${r2Ak}', '${r2Sk}', 'JSONEachRow')
     SETTINGS
       mode = 'unordered',
-      keeper_path = '/clickhouse/s3queue/events_cloud_v3',
+      keeper_path = '/clickhouse/s3queue/events_cloud_v4',
       s3queue_polling_min_timeout_ms = 1000,
       s3queue_polling_max_timeout_ms = 5000,
       s3queue_processing_threads_num = 2,
