@@ -11,7 +11,7 @@ SELECT
   ev.id AS message_id,
   ev.type AS type,
   ev.event AS event,
-  ev.actor AS user_id,
+  ev.actor.id AS user_id,
   ev.data.anonymousId AS anonymous_id,
   ev.data.sessionId AS session_id,
   ev.data.groupId AS group_id,
@@ -51,15 +51,15 @@ SELECT * FROM segment.events WHERE type = 'alias'
 ;
 CREATE VIEW IF NOT EXISTS segment.users AS
 SELECT
-  ev.actor AS id,
+  ev.actor.id.:String AS id,
   max(ev.ts) AS received_at,
-  argMax(ev.data.traits.email, ev.ts) AS email,
-  argMax(ev.data.traits.name, ev.ts) AS name,
-  argMax(ev.data.traits, ev.ts) AS traits,
+  argMax(ev.data.traits.email.:String, ev.ts) AS email,
+  argMax(ev.data.traits.name.:String, ev.ts) AS name,
+  argMax(toString(ev.data.traits), ev.ts) AS traits,
   ev.ns AS namespace
 FROM {database}.events AS ev
-WHERE ev.type = 'identify' AND ev.actor != ''
-GROUP BY ev.actor, ev.ns
+WHERE ev.type = 'identify' AND ev.actor.id.:String != ''
+GROUP BY ev.actor.id.:String, ev.ns
 `,
   down: `
 DROP VIEW IF EXISTS segment.users;

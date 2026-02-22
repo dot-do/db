@@ -11,7 +11,7 @@ SELECT
   toDateTime(ev.ts) AS timestamp,
   if(ev.type = 'page', 'pageview', ev.event) AS name,
   ev.ns AS site_id,
-  cityHash64(coalesce(ev.data.userId, ev.data.anonymousId, ev.actor)) AS user_id,
+  cityHash64(coalesce(ev.data.userId, ev.data.anonymousId, ev.actor.id)) AS user_id,
   cityHash64(coalesce(ev.data.sessionId, '')) AS session_id,
   extractURLParameter(ev.url, 'host') AS hostname,
   coalesce(ev.data.path, ev.url) AS pathname,
@@ -37,7 +37,7 @@ SELECT
   ev.event AS name,
   ev.source AS sdk_name,
   coalesce(ev.data.anonymousId, '') AS device_id,
-  coalesce(ev.data.userId, ev.actor) AS profile_id,
+  coalesce(ev.data.userId, ev.actor.id) AS profile_id,
   ev.ns AS project_id,
   coalesce(ev.data.sessionId, '') AS session_id,
   coalesce(ev.data.path, ev.url) AS path,
@@ -72,7 +72,7 @@ SELECT
   if(ev.type = 'page', 1, 2) AS event_type,
   if(ev.type = 'track', ev.event, '') AS event_name,
   ev.data.properties.title AS page_title,
-  coalesce(ev.data.userId, ev.data.anonymousId, ev.actor) AS distinct_id,
+  coalesce(ev.data.userId, ev.data.anonymousId, ev.actor.id) AS distinct_id,
   toDateTime(ev.ts, 'UTC') AS created_at
 FROM {database}.events AS ev
 WHERE ev.type IN ('page', 'track')
@@ -86,7 +86,7 @@ SELECT
   toString(ev.data.properties) AS properties,
   ev.ts AS timestamp,
   ev.ns AS team_id,
-  coalesce(ev.data.userId, ev.data.anonymousId, ev.actor) AS distinct_id,
+  coalesce(ev.data.userId, ev.data.anonymousId, ev.actor.id) AS distinct_id,
   '' AS elements_chain,
   ev.ts AS created_at,
   coalesce(ev.data.sessionId, '') AS \`$session_id\`,

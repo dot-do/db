@@ -22,7 +22,7 @@ SELECT
 
   CAST(coalesce(ev.data.epcList, []), 'Array(String)') AS epc_list,
   toString(coalesce(ev.data.quantityList, '[]')) AS quantity_list,
-  toString(coalesce(ev.data.parentID, ev.actor, '')) AS parent_id,
+  toString(coalesce(ev.data.parentID, ev.actor.id, '')) AS parent_id,
   CAST(coalesce(ev.data.childEPCs, []), 'Array(String)') AS child_epcs,
   toString(coalesce(ev.data.childQuantityList, '[]')) AS child_quantities,
   CAST(coalesce(ev.data.inputEPCList, []), 'Array(String)') AS input_epc_list,
@@ -43,7 +43,7 @@ SELECT
   toString(coalesce(ev.data.certificationInfo, '')) AS certification_info,
 
   ev.ns AS ns,
-  ev.actor AS actor
+  toString(ev.actor) AS actor
 FROM {database}.events AS ev
 WHERE ev.type LIKE 'epcis.%'
 ;

@@ -18,7 +18,7 @@ SELECT
   ev.data.verified AS verified,
   ev.data.payload AS payload,
   ev.ns AS ns,
-  ev.actor AS actor
+  toString(ev.actor) AS actor
 FROM {database}.events AS ev
 WHERE ev.type = 'webhook' AND ev.data.provider = 'github'
 ;
@@ -30,7 +30,7 @@ SELECT
   ev.data.payload.pusher.name AS pusher,
   ev.data.payload.repository.full_name AS repository,
   ev.data.payload.forced AS forced,
-  size(ev.data.payload.commits) AS commit_count,
+  length(ev.data.payload.commits) AS commit_count,
   ev.ts AS created_at,
   ev.ns AS ns
 FROM {database}.events AS ev

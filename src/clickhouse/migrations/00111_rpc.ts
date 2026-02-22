@@ -20,7 +20,7 @@ SELECT
   ev.data.methods AS methods,
   ev.data.errors AS error_count,
   ev.ns AS ns,
-  ev.actor AS actor,
+  toString(ev.actor) AS actor,
   toDateTime(ev.ts) AS time
 FROM {database}.events AS ev
 WHERE ev.type = 'rpc.batch'
@@ -40,7 +40,7 @@ SELECT
   ev.data.target.id AS target_id,
   ev.data.error IS NOT NULL AS is_error,
   ev.ns AS ns,
-  ev.actor AS actor,
+  toString(ev.actor) AS actor,
   toDateTime(ev.ts) AS time
 FROM {database}.events AS ev
 WHERE ev.type = 'rpc.call'

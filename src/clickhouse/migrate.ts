@@ -42,7 +42,13 @@ function splitStatements(sql: string): string[] {
 }
 
 function replacePlaceholders(sql: string, database: string): string {
-  return sql.replaceAll('{database}', database)
+  let result = sql.replaceAll('{database}', database)
+  result = result.replace(/\{env\.([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name) => {
+    const val = process.env[name]
+    if (!val) throw new Error(`Missing env var: ${name}`)
+    return val
+  })
+  return result
 }
 
 export async function migrate(client: ClickHouseClient, database: string, migrations: Migration[]): Promise<MigrateResult> {

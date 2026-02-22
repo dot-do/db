@@ -58,7 +58,7 @@ SELECT
   ev.data.invoiceId AS invoice_id,
   toString(ev.data.payload) AS payload,
   ev.ns AS ns,
-  ev.actor AS actor
+  toString(ev.actor) AS actor
 FROM {database}.events AS ev
 WHERE ev.type = 'stripe'
 ;

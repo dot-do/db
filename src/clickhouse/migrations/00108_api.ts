@@ -33,7 +33,7 @@ SELECT
   ev.data.spanId AS span_id,
   ev.data.verbosity AS verbosity,
   ev.ns AS ns,
-  ev.actor AS actor,
+  toString(ev.actor) AS actor,
   toDateTime(ev.ts) AS time
 FROM {database}.events AS ev
 WHERE ev.type = 'api.request'
