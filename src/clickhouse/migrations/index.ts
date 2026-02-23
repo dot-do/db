@@ -25,9 +25,11 @@ import { migration as m00110 } from './00110_langfuse'
 import { migration as m00111 } from './00111_rpc'
 import { migration as m00112 } from './00112_email'
 import { migration as m00113 } from './00113_email_v2'
+import { migration as m00114 } from './00114_email_v2_fix'
 import { migration as m0013 } from './0013_events_recreate'
 import { migration as m0014 } from './0014_events_queue'
 import { migration as m0015 } from './0015_fix_mvs_for_json'
 import { migration as m0016 } from './0016_source_calls'
+import { migration as m0017 } from './0017_source_calls_monthly'
 
-export const migrations = [m0001, m0002, m0003, m0004, m0005, m0006, m0007, m0008, m0009, m0010, m0011, m0012, m0013, m0014, m0015, m0016, m00100, m00101, m00102, m00103, m00104, m00105, m00106, m00107, m00108, m00109, m00110, m00111, m00112, m00113]
+export const migrations = [m0001, m0002, m0003, m0004, m0005, m0006, m0007, m0008, m0009, m0010, m0011, m0012, m0013, m0014, m0015, m0016, m0017, m00100, m00101, m00102, m00103, m00104, m00105, m00106, m00107, m00108, m00109, m00110, m00111, m00112, m00113, m00114]
