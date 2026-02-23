@@ -92,12 +92,12 @@ WHERE ev.action = 'email.send'
 
 UNION ALL
 
--- Drafts (from data via CDC)
+-- Drafts (from data via CDC — to is an array of {email} objects)
 SELECT
   ev.id AS id,
   'draft' AS email_type,
   ev.data.from AS sender,
-  ev.data.to AS recipient,
+  COALESCE(ev.data.to[1].email, '') AS recipient,
   ev.data.subject AS subject,
   ev.data.text AS text_body,
   ev.data.html AS html_body,
