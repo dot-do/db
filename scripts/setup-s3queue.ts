@@ -51,9 +51,9 @@ async function create() {
     SETTINGS
       mode = 'unordered',
       keeper_path = '/clickhouse/s3queue/platform_queue_v5',
-      s3queue_polling_min_timeout_ms = 1000,
-      s3queue_polling_max_timeout_ms = 5000,
-      s3queue_processing_threads_num = 2,
+      s3queue_polling_min_timeout_ms = 500,
+      s3queue_polling_max_timeout_ms = 2000,
+      s3queue_processing_threads_num = 4,
       s3queue_loading_retries = 3
   `)
   console.log('  platform.queue created')
