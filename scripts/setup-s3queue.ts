@@ -65,7 +65,12 @@ async function create() {
   await client.exec(`
     CREATE MATERIALIZED VIEW IF NOT EXISTS streams.ingest TO platform.events AS
     SELECT
-      coalesce(nullIf(JSONExtractString(value, 'id'), ''), toString(generateUUIDv4())) AS id,
+      if(
+        length(JSONExtractString(value, 'id')) = 26
+        AND match(JSONExtractString(value, 'id'), '^[0-9A-HJKMNP-TV-Z]{26}$'),
+        JSONExtractString(value, 'id'),
+        toString(generateUUIDv4())
+      ) AS id,
       JSONExtractString(value, 'ns') AS ns,
       parseDateTime64BestEffortOrZero(JSONExtractString(value, 'ts'), 3) AS ts,
       JSONExtractString(value, 'type') AS type,
