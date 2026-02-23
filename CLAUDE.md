@@ -27,9 +27,8 @@ ch "SELECT ..." dbname   # Query a specific database
 
 | Database | Contents |
 |----------|----------|
-| `platform` | Core tables: events, actions, data, versions, traces, logs, sessions, observations, scores, rels, artifacts, search, migrations. S3Queue: `queue` |
-| `streams` | All materialized views: ingest, headlessly, actions, data, logs, traces, sessions, observations, scores, rels, versions |
-| `headlessly` | Platform entity events (separate copy for platform queries) |
+| `platform` | Core tables: events, actions, data, versions, traces, logs, sessions, observations, scores, rels, artifacts, search, metrics_daily, migrations. S3Queue: `queue` |
+| `streams` | All materialized views: ingest, actions, data, logs, traces, sessions, observations, scores, rels, versions, metrics_daily |
 | `startups` | ICP/segmentation data (startups, segments, relationships) |
 | `src` | CommonCrawl/Source data (~34 GiB) |
 | `otel` | OpenTelemetry traces |

@@ -70,8 +70,8 @@ const mvs: Record<string, string> = {
     FROM platform.events AS ev WHERE ev.type = 'session'`,
 
   versions: `CREATE MATERIALIZED VIEW IF NOT EXISTS streams.versions TO platform.versions AS
-    SELECT ev.url AS url, ev.ns AS ns, ev.data.type.:String AS type,
-      ev.data.id.:String AS id, ev.data.name.:String AS name, toString(ev.data) AS data,
+    SELECT ev.url AS url, ev.ns AS ns, ifNull(ev.data.type.:String, '') AS type,
+      ifNull(ev.data.id.:String, '') AS id, ev.data.name.:String AS name, toString(ev.data) AS data,
       ev.data.content.:String AS content, ev.data.code.:String AS code, ev.event AS event,
       ev.data.visibility.:String AS visibility, ev.actor.id.:String AS actor,
       toUInt64(toUnixTimestamp64Milli(ev.ts)) AS v, ev.id AS e
@@ -98,6 +98,12 @@ const mvs: Record<string, string> = {
     SELECT url, ns, type, id, name, data, content, code, '{}' AS meta, visibility,
       toDateTime64(v / 1000, 3) AS updatedAt, actor AS updatedBy, e AS updatedIn, v
     FROM platform.versions`,
+
+  metrics_daily: `CREATE MATERIALIZED VIEW IF NOT EXISTS streams.metrics_daily TO platform.metrics_daily AS
+    SELECT ns, toDate(ts) AS day, type, event,
+      count() AS event_count, uniqState(id) AS entity_count
+    FROM platform.events
+    GROUP BY ns, day, type, event`,
 }
 
 console.log(`${force ? 'Recreating' : 'Creating'} ${Object.keys(mvs).length} materialized views in streams database...`)

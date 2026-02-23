@@ -3,7 +3,7 @@
  * Set up S3Queue on ClickHouse Cloud to ingest events from R2.
  *
  * Pipeline flow: Worker → headlessly_events stream → events pipeline → events_json sink → R2 events/incoming/
- * S3Queue flow: R2 events/incoming/* → events_queue (S3Queue) → events_ingest_mv (MV) → events table
+ * S3Queue flow: R2 events/incoming/* → platform.queue (S3Queue) → streams.ingest (MV) → platform.events
  *
  * Usage:
  *   setup-s3queue.ts create   — Create S3Queue table + MV
@@ -50,7 +50,7 @@ async function create() {
     ) ENGINE = S3Queue('${queueUrl}', '${r2Ak}', '${r2Sk}', 'JSONEachRow')
     SETTINGS
       mode = 'unordered',
-      keeper_path = '/clickhouse/s3queue/platform_queue_v1',
+      keeper_path = '/clickhouse/s3queue/platform_queue_v5',
       s3queue_polling_min_timeout_ms = 1000,
       s3queue_polling_max_timeout_ms = 5000,
       s3queue_processing_threads_num = 2,
@@ -77,7 +77,11 @@ async function create() {
       JSONExtractString(value, 'event') AS event,
       JSONExtractString(value, 'url') AS url,
       JSONExtractString(value, 'source') AS source,
-      JSONExtractString(value, 'actor') AS actor,
+      multiIf(
+        JSONExtractRaw(value, 'actor') IN ('', 'null'), '{}',
+        startsWith(JSONExtractRaw(value, 'actor'), '{'), JSONExtractRaw(value, 'actor'),
+        concat('{"id":', JSONExtractRaw(value, 'actor'), '}')
+      ) AS actor,
       if(JSONHas(value, 'data') AND JSONExtractRaw(value, 'data') NOT IN ('', 'null'), JSONExtractRaw(value, 'data'), '{}') AS data,
       if(JSONHas(value, 'meta') AND JSONExtractRaw(value, 'meta') NOT IN ('', 'null'), JSONExtractRaw(value, 'meta'), '{}') AS meta
     FROM platform.queue

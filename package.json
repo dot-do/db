@@ -19,6 +19,12 @@
       "worker": "./src/do.ts",
       "import": "./dist/do.js",
       "types": "./dist/do.d.ts"
+    },
+    "./query-service": {
+      "workerd": "./src/query-service.ts",
+      "worker": "./src/query-service.ts",
+      "import": "./dist/query-service.js",
+      "types": "./dist/query-service.d.ts"
     }
   },
   "files": [
@@ -28,8 +34,11 @@
     "build": "tsc",
     "ch": "tsx scripts/ch.ts",
     "clean": "rm -rf dist",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
     "test": "tsx scripts/test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types"
   },
   "dependencies": {
     "dotenv": "^17.3.1",
@@ -37,7 +46,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260205.0",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "wrangler": "^4.62.0"
   },
   "keywords": [
     "database",

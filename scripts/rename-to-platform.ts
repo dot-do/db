@@ -124,7 +124,7 @@ await run(
    ENGINE = S3Queue('${r2Base}/events/incoming/**', '${r2Ak}', '${r2Sk}', 'JSONEachRow')
    SETTINGS
      mode = 'unordered',
-     keeper_path = '/clickhouse/s3queue/platform_queue_v1',
+     keeper_path = '/clickhouse/s3queue/platform_queue_v4',
      s3queue_loading_retries = 3,
      s3queue_processing_threads_num = 2`,
 )
@@ -143,7 +143,11 @@ const streamMvs: Record<string, string> = {
       coalesce(parseDateTime64BestEffortOrNull(JSONExtractString(value, 'ts'), 3), now64(3)) AS ts,
       JSONExtractString(value, 'type') AS type,
       JSONExtractString(value, 'event') AS event,
-      if(JSONExtractRaw(value, 'actor') IN ('', 'null'), '{}', JSONExtractRaw(value, 'actor')) AS actor,
+      multiIf(
+        JSONExtractRaw(value, 'actor') IN ('', 'null'), '{}',
+        startsWith(JSONExtractRaw(value, 'actor'), '{'), JSONExtractRaw(value, 'actor'),
+        concat('{"id":', JSONExtractRaw(value, 'actor'), '}')
+      ) AS actor,
       JSONExtractString(value, 'url') AS url,
       JSONExtractString(value, 'source') AS source,
       if(JSONExtractRaw(value, 'data') IN ('', 'null'), '{}', JSONExtractRaw(value, 'data')) AS data,
@@ -152,17 +156,13 @@ const streamMvs: Record<string, string> = {
       now64(3) AS ingested
     FROM platform.queue`,
 
-  // S3Queue → headlessly.events (simplified schema)
-  headlessly: `CREATE MATERIALIZED VIEW IF NOT EXISTS streams.headlessly TO headlessly.events AS
+  // Daily metrics rollup from platform.events
+  metrics_daily: `CREATE MATERIALIZED VIEW IF NOT EXISTS streams.metrics_daily TO platform.metrics_daily AS
     SELECT
-      coalesce(nullIf(JSONExtractString(value, 'id'), ''), toString(generateUUIDv4())) AS id,
-      JSONExtractString(value, 'ns') AS ns,
-      parseDateTime64BestEffortOrZero(JSONExtractString(value, 'ts'), 3) AS ts,
-      JSONExtractString(value, 'type') AS type,
-      JSONExtractString(value, 'event') AS event,
-      JSONExtractString(value, 'source') AS source,
-      if(JSONHas(value, 'data') AND JSONExtractRaw(value, 'data') NOT IN ('', 'null'), JSONExtractRaw(value, 'data'), '{}') AS data
-    FROM platform.queue`,
+      ns, toDate(ts) AS day, type, event,
+      count() AS event_count, uniqState(id) AS entity_count
+    FROM platform.events
+    GROUP BY ns, day, type, event`,
 
   // events → domain tables
   actions: `CREATE MATERIALIZED VIEW IF NOT EXISTS streams.actions TO platform.actions AS
@@ -232,8 +232,8 @@ const streamMvs: Record<string, string> = {
 
   versions: `CREATE MATERIALIZED VIEW IF NOT EXISTS streams.versions TO platform.versions AS
     SELECT
-      ev.url AS url, ev.ns AS ns, ev.data.type.:String AS type,
-      ev.data.id.:String AS id, ev.data.name.:String AS name, toString(ev.data) AS data,
+      ev.url AS url, ev.ns AS ns, ifNull(ev.data.type.:String, '') AS type,
+      ifNull(ev.data.id.:String, '') AS id, ev.data.name.:String AS name, toString(ev.data) AS data,
       ev.data.content.:String AS content, ev.data.code.:String AS code, ev.event AS event,
       ev.data.visibility.:String AS visibility, ev.actor.id.:String AS actor,
       toUInt64(toUnixTimestamp64Milli(ev.ts)) AS v, ev.id AS e
