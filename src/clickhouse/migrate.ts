@@ -20,7 +20,7 @@ export interface MigrationStatus {
 
 async function ensureMigrationsTable(client: ClickHouseClient, database: string): Promise<void> {
   await client.exec(
-    `CREATE TABLE IF NOT EXISTS ${database}.schema_migrations (
+    `CREATE TABLE IF NOT EXISTS ${database}.migrations (
       version UInt64,
       name String,
       applied_at DateTime DEFAULT now()
@@ -30,7 +30,7 @@ async function ensureMigrationsTable(client: ClickHouseClient, database: string)
 }
 
 async function getAppliedVersions(client: ClickHouseClient, database: string): Promise<number[]> {
-  const result = await client.query<{ version: string }>(`SELECT version FROM ${database}.schema_migrations FINAL ORDER BY version`)
+  const result = await client.query<{ version: string }>(`SELECT version FROM ${database}.migrations FINAL ORDER BY version`)
   return result.data.map((row) => Number(row.version))
 }
 
@@ -77,7 +77,7 @@ export async function migrate(client: ClickHouseClient, database: string, migrat
         await client.exec(stmt)
       }
 
-      await client.exec(`INSERT INTO ${database}.schema_migrations (version, name) VALUES (${migration.version}, '${migration.name}')`)
+      await client.exec(`INSERT INTO ${database}.migrations (version, name) VALUES (${migration.version}, '${migration.name}')`)
 
       result.applied.push(migration.version)
     } catch (err) {

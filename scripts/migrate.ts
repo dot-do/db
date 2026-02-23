@@ -17,7 +17,7 @@ if (!endpoint || !password) {
   process.exit(1)
 }
 
-const database = process.argv[2] ?? 'default'
+const database = process.argv[2] ?? 'platform'
 console.log(`Running ${migrations.length} migrations against database: ${database}`)
 
 const client = new ClickHouseClient({ endpoint, user, password, database })
