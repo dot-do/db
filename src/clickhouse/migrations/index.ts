@@ -26,6 +26,5 @@ import { migration as m00111 } from './00111_rpc'
 import { migration as m0013 } from './0013_events_recreate'
 import { migration as m0014 } from './0014_events_queue'
 import { migration as m0015 } from './0015_fix_mvs_for_json'
-import { migration as m0016 } from './0016_ulid_validation'
 
-export const migrations = [m0001, m0002, m0003, m0004, m0005, m0006, m0007, m0008, m0009, m0010, m0011, m0012, m0013, m0014, m0015, m0016, m00100, m00101, m00102, m00103, m00104, m00105, m00106, m00107, m00108, m00109, m00110, m00111]
+export const migrations = [m0001, m0002, m0003, m0004, m0005, m0006, m0007, m0008, m0009, m0010, m0011, m0012, m0013, m0014, m0015, m00100, m00101, m00102, m00103, m00104, m00105, m00106, m00107, m00108, m00109, m00110, m00111]
