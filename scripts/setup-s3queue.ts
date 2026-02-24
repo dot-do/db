@@ -165,16 +165,10 @@ async function create() {
 
       coalesce(nullIf(JSONExtractString(value, 'source'), ''), 'unknown') AS source,
 
-      -- actor: source-provided > request.cf > tail trace cf
-      multiIf(
-        JSONHas(value, 'actor') AND JSONExtractRaw(value, 'actor') NOT IN ('', 'null', '{}'),
-          JSONExtractRaw(value, 'actor'),
-        JSONHas(value, 'request', 'cf'),
-          JSONExtractRaw(value, 'request', 'cf'),
-        JSONHas(value, 'data', 'event', 'request', 'cf'),
-          JSONExtractRaw(value, 'data', 'event', 'request', 'cf'),
-        '{}'
-      ) AS actor,
+      -- actor: source-provided (ip, ua, identity) — clean identity only
+      -- Raw cf lives in data.cf or data.event.request.cf for edge context queries
+      if(JSONHas(value, 'actor') AND JSONExtractRaw(value, 'actor') NOT IN ('', 'null', '{}'),
+        JSONExtractRaw(value, 'actor'), '{}') AS actor,
 
       if(JSONHas(value, 'data') AND JSONExtractRaw(value, 'data') NOT IN ('', 'null'),
         JSONExtractRaw(value, 'data'), '{}') AS data,
