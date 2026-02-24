@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "database",
+  "main": "src/worker.ts",
+  "account_id": "b6641681fe423910342b9ffa1364c76d",
+  "compatibility_date": "2026-02-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "DATABASE", "class_name": "DatabaseDO" }
+    ]
+  },
+
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["DatabaseDO"] }
+  ],
+
+  // Observability
+  "tail_consumers": [
+    { "service": "tail" },
+    { "service": "headlessly-tail" }
+  ]
+
+  // Secrets (set via `wrangler secret put`):
+  // - CLICKHOUSE_URL
+  // - CLICKHOUSE_PASSWORD
+}

@@ -13,11 +13,10 @@ CREATE DATABASE IF NOT EXISTS email
 CREATE VIEW IF NOT EXISTS email.received AS
 SELECT
   ev.id AS id,
-  -- Structured from (new format) with fallback for old flat-string format
-  COALESCE(ev.data.from.address, ev.data.from) AS sender,
-  COALESCE(ev.data.from.name, '') AS sender_name,
-  -- Recipient: first entry from to array, fallback to old flat-string
-  COALESCE(ev.data.to[1].address, ev.data.to) AS recipient,
+  -- Flat envelope fields (written by receive handler for easy view access)
+  ev.data.sender AS sender,
+  ev.data.from.name AS sender_name,
+  ev.data.recipient AS recipient,
   ev.data.to AS to_addresses,
   ev.data.cc AS cc_addresses,
   ev.data.bcc AS bcc_addresses,
@@ -40,20 +39,20 @@ WHERE ev.type = 'email.received'
 CREATE VIEW IF NOT EXISTS email.sent AS
 SELECT
   ev.id AS id,
-  ev.data.actionId AS action_id,
-  ev.data.input.to AS recipient,
-  ev.data.input.from AS sender,
-  ev.data.input.subject AS subject,
-  ev.data.input.text AS text_body,
-  ev.data.input.html AS html_body,
-  ev.data.input.replyTo AS reply_to,
-  ev.data.output.id AS provider_id,
-  COALESCE(ev.data.output.provider, 'resend') AS provider,
-  ev.data.status AS status,
-  ev.data.error.message AS error,
-  ev.data.duration AS duration,
+  ev.action AS action_id,
+  JSONExtractString(ev.input, 'to') AS recipient,
+  JSONExtractString(ev.input, 'from') AS sender,
+  JSONExtractString(ev.input, 'subject') AS subject,
+  JSONExtractString(ev.input, 'text') AS text_body,
+  JSONExtractString(ev.input, 'html') AS html_body,
+  JSONExtractString(ev.input, 'replyTo') AS reply_to,
+  JSONExtractString(ev.output, 'id') AS provider_id,
+  COALESCE(JSONExtractString(ev.output, 'provider'), 'resend') AS provider,
+  ev.status AS status,
+  JSONExtractString(ev.error, 'message') AS error,
+  ev.duration AS duration,
   ev.ns AS ns,
-  toDateTime(ev.ts) AS time
+  ev.ts AS time
 FROM {database}.actions AS ev
 WHERE ev.action = 'email.send'
 ;
@@ -62,8 +61,8 @@ CREATE VIEW IF NOT EXISTS email.all AS
 SELECT
   ev.id AS id,
   'received' AS email_type,
-  COALESCE(ev.data.from.address, ev.data.from) AS sender,
-  COALESCE(ev.data.to[1].address, ev.data.to) AS recipient,
+  ev.data.sender AS sender,
+  ev.data.recipient AS recipient,
   ev.data.subject AS subject,
   ev.data.text AS text_body,
   ev.data.html AS html_body,
@@ -79,31 +78,31 @@ UNION ALL
 SELECT
   ev.id AS id,
   'sent' AS email_type,
-  ev.data.input.from AS sender,
-  ev.data.input.to AS recipient,
-  ev.data.input.subject AS subject,
-  ev.data.input.text AS text_body,
-  ev.data.input.html AS html_body,
-  ev.data.status AS status,
+  JSONExtractString(ev.input, 'from') AS sender,
+  JSONExtractString(ev.input, 'to') AS recipient,
+  JSONExtractString(ev.input, 'subject') AS subject,
+  JSONExtractString(ev.input, 'text') AS text_body,
+  JSONExtractString(ev.input, 'html') AS html_body,
+  ev.status AS status,
   ev.ns AS ns,
-  toDateTime(ev.ts) AS time
+  ev.ts AS time
 FROM {database}.actions AS ev
 WHERE ev.action = 'email.send'
 
 UNION ALL
 
--- Drafts (from data via CDC — to is an array of {email} objects)
+-- Drafts (from data via CDC — data column is String, use JSONExtract)
 SELECT
   ev.id AS id,
   'draft' AS email_type,
-  ev.data.from AS sender,
-  COALESCE(ev.data.to[1].email, '') AS recipient,
-  ev.data.subject AS subject,
-  ev.data.text AS text_body,
-  ev.data.html AS html_body,
-  ev.data.status AS status,
+  JSONExtractString(ev.data, 'from') AS sender,
+  JSONExtractString(JSONExtractArrayRaw(ev.data, 'to')[1], 'email') AS recipient,
+  JSONExtractString(ev.data, 'subject') AS subject,
+  JSONExtractString(ev.data, 'text') AS text_body,
+  JSONExtractString(ev.data, 'html') AS html_body,
+  JSONExtractString(ev.data, 'status') AS status,
   ev.ns AS ns,
-  toDateTime(ev.ts) AS time
+  ev.updatedAt AS time
 FROM {database}.data AS ev
 WHERE ev.type = 'email-drafts'
 `,

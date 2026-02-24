@@ -10,7 +10,7 @@
  * - Event compaction via alarm()
  *
  * Architecture:
- * - `entities` table: id (PK), type, data (JSON), created_at, updated_at, deleted_at (soft deletes)
+ * - `entities` table: id (PK), type, data (JSON), version, created_at, updated_at, deleted_at
  * - `events` table: CDC event log for sync, time-travel, and forwarding
  * - `metadata` table: namespace, system slug, compaction state
  *
@@ -31,6 +31,9 @@ import {
 import type { DOContext, ParqueDBCollection } from './handlers/handler-context'
 import { EventLogger, queryEventsFromWal } from './handlers/event-logger'
 import type { EventsBinding } from './handlers/event-forwarding'
+import type { DBEntity, FindResult, DeleteResult } from './types'
+export { toExpanded, toFlat } from './types'
+export type { DBEntity, DBEntityExpanded, FindResult, DeleteResult } from './types'
 
 // Re-export types used by consumers
 export type { DOContext, ParqueDBCollection } from './handlers/handler-context'
@@ -89,10 +92,23 @@ async function parseJsonBody<T>(request: Request): Promise<T | Response> {
 
 /**
  * Evaluate a MongoDB-style filter against a data object.
- * Supports: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $regex, direct equality.
+ * Supports: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $regex,
+ * $or, $and, $options (alongside $regex), and direct equality.
  */
 function matchesFilter(data: Record<string, unknown>, filter: Record<string, unknown>): boolean {
   for (const [key, condition] of Object.entries(filter)) {
+    // Logical operators at the top level
+    if (key === '$or') {
+      const clauses = condition as Record<string, unknown>[]
+      if (!Array.isArray(clauses) || !clauses.some((clause) => matchesFilter(data, clause))) return false
+      continue
+    }
+    if (key === '$and') {
+      const clauses = condition as Record<string, unknown>[]
+      if (!Array.isArray(clauses) || !clauses.every((clause) => matchesFilter(data, clause))) return false
+      continue
+    }
+
     const value = data[key]
 
     if (condition === null || condition === undefined || typeof condition !== 'object' || Array.isArray(condition)) {
@@ -134,10 +150,15 @@ function matchesFilter(data: Record<string, unknown>, filter: Record<string, unk
           break
         case '$regex': {
           if (typeof value !== 'string' || typeof expected !== 'string') return false
-          const re = new RegExp(expected)
+          // Consume $options if present alongside $regex
+          const flags = typeof ops.$options === 'string' ? ops.$options : ''
+          const re = new RegExp(expected, flags)
           if (!re.test(value)) return false
           break
         }
+        case '$options':
+          // Consumed by $regex handler — skip standalone processing
+          break
         default:
           // Unknown operator — treat as direct equality on nested field
           if (value !== expected) return false
@@ -233,11 +254,18 @@ export class DB extends DurableObject {
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL,
         data TEXT NOT NULL DEFAULT '{}',
-        created_at TEXT,
-        updated_at TEXT,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         deleted_at TEXT
       )
     `)
+    // Migration: add version column to existing tables that lack it
+    try {
+      this.sql.exec('ALTER TABLE entities ADD COLUMN version INTEGER NOT NULL DEFAULT 1')
+    } catch {
+      // Column already exists — expected
+    }
     this.sql.exec('CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type)')
     this.sql.exec('CREATE INDEX IF NOT EXISTS idx_entities_type_deleted ON entities(type, deleted_at)')
     this.sql.exec(`
@@ -287,45 +315,46 @@ export class DB extends DurableObject {
   }
 
   // =========================================================================
-  // Collection Interface (ParqueDBCollection-compatible)
+  // Collection Interface
   // =========================================================================
+
+  /** Build a row into a flat DBEntity */
+  protected rowToEntity(row: Record<string, unknown>, type: string): DBEntity {
+    const parsed = row.data ? JSON.parse(row.data as string) : {}
+    return {
+      ...parsed,
+      $id: row.id as string,
+      $type: type,
+      $version: (row.version as number) ?? 1,
+      $createdAt: row.created_at as string,
+      $updatedAt: row.updated_at as string,
+    }
+  }
 
   protected getCollection(type: string): ParqueDBCollection {
     validateEntityType(type)
     const sql = this.sql
+    const rowToEntity = (row: Record<string, unknown>) => this.rowToEntity(row, type)
 
     return {
       async find(
         filter?: Record<string, unknown>,
         options?: Record<string, unknown>,
-      ): Promise<{ items: unknown[]; total?: number; hasMore?: boolean }> {
+      ): Promise<{ items: DBEntity[]; total: number; hasMore: boolean }> {
         const limit = (options?.limit as number) ?? 100
         const offset = (options?.skip as number) ?? (options?.offset as number) ?? 0
         const sort = options?.sort as Record<string, 1 | -1> | undefined
 
-        // Query all non-deleted entities of this type
-        const rows = sql.exec('SELECT id, data, created_at, updated_at FROM entities WHERE type = ? AND deleted_at IS NULL', type).toArray()
+        const rows = sql.exec('SELECT id, data, version, created_at, updated_at FROM entities WHERE type = ? AND deleted_at IS NULL', type).toArray()
 
-        // Parse JSON data and attach meta fields
-        let items: Record<string, unknown>[] = rows.map((row) => {
-          const parsed = row.data ? JSON.parse(row.data as string) : {}
-          return {
-            ...parsed,
-            $id: row.id as string,
-            $type: type,
-            $createdAt: row.created_at as string,
-            $updatedAt: row.updated_at as string,
-          }
-        })
+        let items: DBEntity[] = rows.map(rowToEntity)
 
-        // Apply filter in-memory (MongoDB-style)
         if (filter && Object.keys(filter).length > 0) {
           items = items.filter((item) => matchesFilter(item, filter))
         }
 
         const total = items.length
 
-        // Apply sort
         if (sort) {
           const sortEntries = Object.entries(sort)
           items.sort((a, b) => {
@@ -342,77 +371,73 @@ export class DB extends DurableObject {
           })
         }
 
-        // Apply pagination
         const paged = items.slice(offset, offset + limit)
         const hasMore = offset + limit < total
 
         return { items: paged, total, hasMore }
       },
 
-      async findOne(filter?: Record<string, unknown>): Promise<unknown | null> {
+      async findOne(filter?: Record<string, unknown>): Promise<DBEntity | null> {
         const result = await this.find(filter, { limit: 1 })
-        return result.items[0] ?? null
+        return (result.items[0] as DBEntity) ?? null
       },
 
-      async get(id: string): Promise<Record<string, unknown> | null> {
-        const rows = sql.exec('SELECT id, data, created_at, updated_at FROM entities WHERE id = ? AND deleted_at IS NULL', id).toArray()
+      async get(id: string): Promise<DBEntity | null> {
+        const rows = sql.exec('SELECT id, data, version, created_at, updated_at FROM entities WHERE id = ? AND deleted_at IS NULL', id).toArray()
         if (rows.length === 0) return null
-        const row = rows[0]
-        const parsed = row.data ? JSON.parse(row.data as string) : {}
-        return {
-          ...parsed,
-          $id: row.id as string,
-          $type: type,
-          $createdAt: row.created_at as string,
-          $updatedAt: row.updated_at as string,
-        }
+        return rowToEntity(rows[0])
       },
 
-      async create(data: Record<string, unknown>): Promise<unknown> {
+      async create(data: Record<string, unknown>): Promise<DBEntity> {
         const id = (data.$id as string) ?? generateEntityId(type)
         const now = new Date().toISOString()
 
-        // Strip meta fields from data payload
         const { $id: _id, $type: _type, $createdAt: _ca, $updatedAt: _ua, $version: _v, $createdBy: _cb, $updatedBy: _ub, ...rest } = data
         const jsonData = JSON.stringify(rest)
 
-        sql.exec('INSERT INTO entities (id, type, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', id, type, jsonData, now, now)
+        sql.exec('INSERT INTO entities (id, type, data, version, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)', id, type, jsonData, now, now)
 
         return {
           ...rest,
           $id: id,
           $type: type,
+          $version: 1,
           $createdAt: now,
           $updatedAt: now,
         }
       },
 
-      async update(id: string, data: Record<string, unknown>): Promise<Record<string, unknown> | null> {
-        // Fetch existing
-        const rows = sql.exec('SELECT id, data, created_at, updated_at FROM entities WHERE id = ? AND deleted_at IS NULL', id).toArray()
+      async update(id: string, data: Record<string, unknown>): Promise<DBEntity | null> {
+        const rows = sql.exec('SELECT id, data, version, created_at, updated_at FROM entities WHERE id = ? AND deleted_at IS NULL', id).toArray()
         if (rows.length === 0) return null
         const row = rows[0]
         const existing = row.data ? JSON.parse(row.data as string) : {}
+        const currentVersion = (row.version as number) ?? 1
+        const nextVersion = currentVersion + 1
         const now = new Date().toISOString()
 
-        // Strip meta fields from incoming data
-        const { $id: _id, $type: _type, $createdAt: _ca, $updatedAt: _ua, $version: _v, $createdBy: _cb, $updatedBy: _ub, ...rest } = data
+        // Unwrap $set if present (adapters send { $set: { ...fields } })
+        const updates = (data.$set && typeof data.$set === 'object' && !Array.isArray(data.$set))
+          ? (data.$set as Record<string, unknown>)
+          : data
+
+        const { $id: _id, $type: _type, $createdAt: _ca, $updatedAt: _ua, $version: _v, $createdBy: _cb, $updatedBy: _ub, ...rest } = updates
         const merged = { ...existing, ...rest }
         const jsonData = JSON.stringify(merged)
 
-        sql.exec('UPDATE entities SET data = ?, updated_at = ? WHERE id = ?', jsonData, now, id)
+        sql.exec('UPDATE entities SET data = ?, version = ?, updated_at = ? WHERE id = ?', jsonData, nextVersion, now, id)
 
         return {
           ...merged,
           $id: id,
           $type: type,
+          $version: nextVersion,
           $createdAt: row.created_at as string,
           $updatedAt: now,
         }
       },
 
-      async delete(id: string): Promise<{ deletedCount: number }> {
-        // Soft delete
+      async delete(id: string): Promise<DeleteResult> {
         const now = new Date().toISOString()
         sql.exec('UPDATE entities SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL', now, id)
         const changesRow = sql.exec('SELECT changes() as cnt').toArray()
@@ -474,34 +499,71 @@ export class DB extends DurableObject {
   }
 
   // =========================================================================
-  // RPC-friendly async wrappers
+  // RPC Methods
   //
-  // These async methods make entity operations accessible via cross-worker
-  // DO RPC (Cloudflare requires RPC methods to return Promises).
+  // Public async methods for cross-worker DO RPC. All return canonical
+  // DBEntity shapes. Mutations are write-locked + CDC event-logged.
   // =========================================================================
 
   async find(
     type: string,
     filter?: Record<string, unknown>,
     options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
-  ): Promise<{ items: unknown[]; total: number; hasMore: boolean }> {
+  ): Promise<FindResult> {
     const collection = this.getCollection(type)
-    const result = await collection.find(filter, { ...options, skip: options?.offset })
-    return {
-      items: result.items,
-      total: (result.total as number) ?? 0,
-      hasMore: (result.hasMore as boolean) ?? false,
-    }
+    return collection.find(filter, { ...options, skip: options?.offset })
   }
 
-  async countEntities(type: string): Promise<number> {
-    const rows = this.sql.exec('SELECT COUNT(*) as cnt FROM entities WHERE type = ? AND deleted_at IS NULL', type).toArray()
-    return (rows[0]?.cnt as number) ?? 0
-  }
-
-  async getEntity(type: string, id: string): Promise<unknown> {
+  async get(type: string, id: string): Promise<DBEntity | null> {
     const collection = this.getCollection(type)
     return collection.get(id)
+  }
+
+  async findOne(type: string, filter?: Record<string, unknown>): Promise<DBEntity | null> {
+    const collection = this.getCollection(type)
+    return collection.findOne(filter)
+  }
+
+  async count(type: string, filter?: Record<string, unknown>): Promise<number> {
+    if (!filter || Object.keys(filter).length === 0) {
+      const rows = this.sql.exec('SELECT COUNT(*) as cnt FROM entities WHERE type = ? AND deleted_at IS NULL', type).toArray()
+      return (rows[0]?.cnt as number) ?? 0
+    }
+    const result = await this.find(type, filter, { limit: 1 })
+    return result.total
+  }
+
+  async create(type: string, data: Record<string, unknown>): Promise<DBEntity> {
+    return this.withWriteLock(async () => {
+      const collection = this.getCollection(type)
+      const entity = await collection.create(data)
+      this.eventLogger.safeLogEvent('create', type, entity.$id, entity)
+      return entity
+    })
+  }
+
+  async update(type: string, id: string, data: Record<string, unknown>): Promise<DBEntity | null> {
+    return this.withWriteLock(async () => {
+      const collection = this.getCollection(type)
+      const prev = await collection.get(id)
+      const entity = await collection.update(id, data)
+      if (entity) {
+        this.eventLogger.safeLogEvent('update', type, id, entity, prev ?? undefined)
+      }
+      return entity
+    })
+  }
+
+  async delete(type: string, id: string): Promise<DeleteResult> {
+    return this.withWriteLock(async () => {
+      const collection = this.getCollection(type)
+      const prev = await collection.get(id)
+      const result = await collection.delete(id)
+      if (result.deletedCount > 0 && prev) {
+        this.eventLogger.safeLogEvent('delete', type, id, undefined, prev)
+      }
+      return result
+    })
   }
 
   /**

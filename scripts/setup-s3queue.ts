@@ -69,7 +69,7 @@ async function create() {
         length(JSONExtractString(value, 'id')) = 26
         AND match(JSONExtractString(value, 'id'), '^[0-9A-HJKMNP-TV-Z]{26}$'),
         JSONExtractString(value, 'id'),
-        toString(generateUUIDv4())
+        generateULID()
       ) AS id,
       JSONExtractString(value, 'ns') AS ns,
       parseDateTime64BestEffortOrZero(JSONExtractString(value, 'ts'), 3) AS ts,

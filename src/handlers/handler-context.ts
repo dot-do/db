@@ -4,14 +4,15 @@
  */
 
 import type { SyncEvent } from './types'
+import type { DBEntity, FindResult, DeleteResult } from '../types'
 
 export interface ParqueDBCollection {
-  find(filter?: Record<string, unknown>, options?: Record<string, unknown>): Promise<{ items: unknown[]; total?: number; hasMore?: boolean }>
-  findOne(filter?: Record<string, unknown>): Promise<unknown | null>
-  get(id: string): Promise<Record<string, unknown> | null>
-  create(data: Record<string, unknown>): Promise<unknown>
-  update(id: string, data: Record<string, unknown>): Promise<Record<string, unknown> | null>
-  delete(id: string): Promise<{ deletedCount: number }>
+  find(filter?: Record<string, unknown>, options?: Record<string, unknown>): Promise<FindResult>
+  findOne(filter?: Record<string, unknown>): Promise<DBEntity | null>
+  get(id: string): Promise<DBEntity | null>
+  create(data: Record<string, unknown>): Promise<DBEntity>
+  update(id: string, data: Record<string, unknown>): Promise<DBEntity | null>
+  delete(id: string): Promise<DeleteResult>
 }
 
 export interface EventQueryOptions {

@@ -22,6 +22,10 @@ export type { ClickHouseConfig, QueryResult, ExecResult } from './clickhouse/typ
 export { migrate, getMigrationStatus } from './clickhouse/migrate'
 export type { Migration, MigrateResult, MigrationStatus } from './clickhouse/migrate'
 
+// DB Entity Types
+export { toExpanded, toFlat } from './types'
+export type { DBEntity, DBEntityExpanded, FindResult, DeleteResult } from './types'
+
 // DB Durable Object
 export { DB, DatabaseDO } from './do'
 export type { DBEnv, DatabaseDOEnv, DOContext, ParqueDBCollection, EventQueryOptions } from './do'
