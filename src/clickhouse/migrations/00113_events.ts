@@ -59,7 +59,7 @@ SELECT
   ev.data.payload AS payload,
   ev.actor AS actor
 FROM {database}.events AS ev
-WHERE ev.type = 'webhook'
+WHERE ev.source IN ('github', 'stripe', 'workos', 'slack', 'linear', 'svix')
 ;
 CREATE OR REPLACE VIEW events.traces AS
 SELECT

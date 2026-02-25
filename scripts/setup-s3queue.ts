@@ -94,16 +94,20 @@ async function create() {
         ''
       ) AS ray,
 
-      -- ns: source-provided > hostname from request url > hostname from tail trace > scriptName
+      -- ns: source-provided > real hostname from URL (must contain '.' to skip DO stubs like 'buffer')
       coalesce(
         nullIf(JSONExtractString(value, 'ns'), ''),
-        nullIf(domain(coalesce(
-          nullIf(JSONExtractString(value, 'request', 'url'), ''),
-          nullIf(JSONExtractString(value, 'data', 'event', 'request', 'url'), ''),
+        if(
+          position(domain(coalesce(
+            nullIf(JSONExtractString(value, 'data', 'event', 'request', 'url'), ''),
+            ''
+          )), '.') > 0,
+          domain(coalesce(
+            nullIf(JSONExtractString(value, 'data', 'event', 'request', 'url'), ''),
+            ''
+          )),
           ''
-        )), ''),
-        nullIf(JSONExtractString(value, 'data', 'scriptName'), ''),
-        'unknown'
+        )
       ) AS ns,
 
       -- domain: source-provided > hostname from request url > hostname from tail trace
@@ -132,31 +136,32 @@ async function create() {
         )
       ) AS type,
 
-      -- event: source-provided > derive from tail trace (scriptName.category.outcome)
+      -- event: source-provided > derive from tail trace (WorkerName.Category.Outcome)
+      -- PascalCase: replaceAll(initcap(kebab), '-', '') converts 'headlessly-api' → 'HeadlesslyApi'
       coalesce(
         nullIf(JSONExtractString(value, 'event'), ''),
         concat(
-          coalesce(nullIf(JSONExtractString(value, 'data', 'scriptName'), ''), 'unknown'),
+          replaceAll(initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'scriptName'), ''), 'Unknown')), '-', ''),
           '.',
           multiIf(
             JSONHas(value, 'data', 'event', 'request'),
-              concat('fetch.', if(
+              concat('Fetch.', if(
                 toUInt16OrZero(JSONExtractRaw(value, 'data', 'event', 'response', 'status')) BETWEEN 200 AND 399,
-                'ok', 'error'
+                'Ok', 'Error'
               )),
             JSONHas(value, 'data', 'event', 'rpcMethod'),
-              concat('rpc.', JSONExtractString(value, 'data', 'event', 'rpcMethod')),
+              concat('Rpc.', JSONExtractString(value, 'data', 'event', 'rpcMethod')),
             JSONHas(value, 'data', 'event', 'scheduledTime'),
-              concat('cron.', coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')),
+              concat('Cron.', initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))),
             JSONHas(value, 'data', 'event', 'queue'),
-              concat('queue.', coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')),
+              concat('Queue.', initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))),
             JSONExtractString(value, 'data', 'event', 'type') = 'alarm',
-              concat('alarm.', coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')),
+              concat('Alarm.', initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))),
             JSONHas(value, 'data', 'event', 'rcptTo'),
-              concat('email.', coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')),
+              concat('Email.', initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))),
             JSONHas(value, 'data', 'event', 'getWebSocketEvent'),
-              concat('websocket.', coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')),
-            coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')
+              concat('WebSocket.', initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))),
+            initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))
           )
         )
       ) AS event,
