@@ -50,7 +50,7 @@ async function create() {
     ) ENGINE = S3Queue('${queueUrl}', '${r2Ak}', '${r2Sk}', 'JSONEachRow')
     SETTINGS
       mode = 'unordered',
-      keeper_path = '/clickhouse/s3queue/platform_queue_v7',
+      keeper_path = '/clickhouse/s3queue/platform_queue_v8',
       s3queue_polling_min_timeout_ms = 500,
       s3queue_polling_max_timeout_ms = 2000,
       s3queue_processing_threads_num = 4,
