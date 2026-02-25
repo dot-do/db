@@ -19,8 +19,7 @@
 
   // Observability
   "tail_consumers": [
-    { "service": "tail" },
-    { "service": "headlessly-tail" }
+    { "service": "tail" }
   ]
 
   // Secrets (set via `wrangler secret put`):
