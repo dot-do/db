@@ -165,25 +165,9 @@ SELECT
   ev.actor AS actor
 FROM {database}.events AS ev
 WHERE ev.type IN ('ai.call', 'source.call', 'source_call')
-;
-CREATE OR REPLACE VIEW events.source_calls AS
-SELECT
-  ev.id AS id,
-  ev.ns AS ns,
-  ev.domain AS domain,
-  ULIDStringToDateTime(ev.id) AS ts,
-  ev.source AS source,
-  ev.data.provider AS provider,
-  ev.data.model AS model,
-  ev.data.tokens AS tokens,
-  ev.data.latencyMs AS latencyMs,
-  ev.actor AS actor,
-  ev.data AS data
-FROM {database}.events AS ev
-WHERE ev.type = 'source_call' OR ev.type = 'source.call'
+
 `,
   down: `
-DROP VIEW IF EXISTS events.source_calls;
 DROP VIEW IF EXISTS events.ai;
 DROP VIEW IF EXISTS events.websocket;
 DROP VIEW IF EXISTS events.email;
