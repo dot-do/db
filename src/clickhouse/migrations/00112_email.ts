@@ -26,7 +26,7 @@ SELECT
   ev.data.attachments AS attachments,
   ev.data.headers AS headers,
   ev.ns AS ns,
-  toDateTime(ev.ts) AS time
+  toDateTime(ULIDStringToDateTime(ev.id)) AS time
 FROM {database}.events AS ev
 WHERE ev.type = 'email.received'
 ;
@@ -46,7 +46,7 @@ SELECT
   ev.data.error.message AS error,
   ev.data.duration AS duration,
   ev.ns AS ns,
-  toDateTime(ev.ts) AS time
+  toDateTime(ULIDStringToDateTime(ev.id)) AS time
 FROM {database}.events AS ev
 WHERE ev.type = 'action' AND ev.event = 'email.send'
 ;
@@ -62,7 +62,7 @@ SELECT
   ev.data.html AS html_body,
   'completed' AS status,
   ev.ns AS ns,
-  toDateTime(ev.ts) AS time
+  toDateTime(ULIDStringToDateTime(ev.id)) AS time
 FROM {database}.events AS ev
 WHERE ev.type = 'email.received'
 
@@ -79,22 +79,22 @@ SELECT
   ev.data.input.html AS html_body,
   ev.data.status AS status,
   ev.ns AS ns,
-  toDateTime(ev.ts) AS time
+  toDateTime(ULIDStringToDateTime(ev.id)) AS time
 FROM {database}.events AS ev
 WHERE ev.type = 'action' AND ev.event = 'email.send'
 
 UNION ALL
 
--- Drafts (from data via CDC — data column is String, use JSONExtract)
+-- Drafts (from data via CDC)
 SELECT
   ev.id AS id,
   'draft' AS email_type,
-  JSONExtractString(ev.data, 'from') AS sender,
-  JSONExtractString(JSONExtractArrayRaw(ev.data, 'to')[1], 'email') AS recipient,
-  JSONExtractString(ev.data, 'subject') AS subject,
-  JSONExtractString(ev.data, 'text') AS text_body,
-  JSONExtractString(ev.data, 'html') AS html_body,
-  JSONExtractString(ev.data, 'status') AS status,
+  ev.data.from.:String AS sender,
+  ev.data.to.:String AS recipient,
+  ev.data.subject.:String AS subject,
+  ev.data.text.:String AS text_body,
+  ev.data.html.:String AS html_body,
+  ev.data.status.:String AS status,
   ev.ns AS ns,
   ev.updatedAt AS time
 FROM {database}.data AS ev

@@ -17,18 +17,7 @@ CREATE TABLE IF NOT EXISTS {database}.sessions (
 PARTITION BY toDate(Timestamp)
 ORDER BY (ServiceName, toDateTime(Timestamp), Timestamp)
 TTL toDate(Timestamp) + toIntervalDay(30)
-;
-CREATE MATERIALIZED VIEW IF NOT EXISTS {database}.sessions_mv TO {database}.sessions AS
-SELECT
-  ev.ts AS Timestamp,
-  ev.data.sessionId AS SessionId,
-  ev.data.serviceName AS ServiceName,
-  ev.data.body AS Body,
-  CAST(ev.data.resourceAttributes, 'Map(String, String)') AS ResourceAttributes,
-  CAST(ev.data.logAttributes, 'Map(String, String)') AS LogAttributes,
-  ev.ns AS ns
-FROM {database}.events AS ev
-WHERE ev.type = 'session'
+
 `,
-  down: 'DROP VIEW IF EXISTS {database}.sessions_mv; DROP TABLE IF EXISTS {database}.sessions',
+  down: 'DROP TABLE IF EXISTS {database}.sessions',
 }

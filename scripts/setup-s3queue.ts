@@ -106,7 +106,16 @@ async function create() {
         'unknown'
       ) AS ns,
 
-      parseDateTime64BestEffortOrZero(JSONExtractString(value, 'ts'), 3) AS ts,
+      -- domain: source-provided > hostname from request url > hostname from tail trace
+      coalesce(
+        nullIf(JSONExtractString(value, 'domain'), ''),
+        nullIf(domain(coalesce(
+          nullIf(JSONExtractString(value, 'url'), ''),
+          nullIf(JSONExtractString(value, 'data', 'event', 'request', 'url'), ''),
+          ''
+        )), ''),
+        ''
+      ) AS domain,
 
       -- type: source-provided > classify from tail trace event shape
       coalesce(
@@ -165,10 +174,26 @@ async function create() {
 
       coalesce(nullIf(JSONExtractString(value, 'source'), ''), 'unknown') AS source,
 
-      -- actor: source-provided (ip, ua, identity) — clean identity only
-      -- Raw cf lives in data.cf or data.event.request.cf for edge context queries
+      -- actor: source-provided curated identity + geo context
+      -- For records with actor already set (ingest, otel), use directly
+      -- For tail records without actor, extract curated fields from CF data
       if(JSONHas(value, 'actor') AND JSONExtractRaw(value, 'actor') NOT IN ('', 'null', '{}'),
-        JSONExtractRaw(value, 'actor'), '{}') AS actor,
+        JSONExtractRaw(value, 'actor'),
+        -- Curate actor from tail trace CF data (NOT the full 85-field dump)
+        concat('{',
+          '"ip":"', replaceAll(coalesce(
+            nullIf(JSONExtractString(value, 'data', 'event', 'request', 'headers', 'cf-connecting-ip'), ''),
+            ''), '"', '\\"'), '",',
+          '"country":"', JSONExtractString(value, 'data', 'event', 'request', 'cf', 'country'), '",',
+          '"city":"', replaceAll(JSONExtractString(value, 'data', 'event', 'request', 'cf', 'city'), '"', '\\"'), '",',
+          '"region":"', replaceAll(JSONExtractString(value, 'data', 'event', 'request', 'cf', 'region'), '"', '\\"'), '",',
+          '"continent":"', JSONExtractString(value, 'data', 'event', 'request', 'cf', 'continent'), '",',
+          '"colo":"', JSONExtractString(value, 'data', 'event', 'request', 'cf', 'colo'), '",',
+          '"timezone":"', JSONExtractString(value, 'data', 'event', 'request', 'cf', 'timezone'), '",',
+          '"asn":', toString(JSONExtractUInt(value, 'data', 'event', 'request', 'cf', 'asn')), ',',
+          '"asOrg":"', replaceAll(JSONExtractString(value, 'data', 'event', 'request', 'cf', 'asOrganization'), '"', '\\"'), '"',
+        '}')
+      ) AS actor,
 
       if(JSONHas(value, 'data') AND JSONExtractRaw(value, 'data') NOT IN ('', 'null'),
         JSONExtractRaw(value, 'data'), '{}') AS data,
@@ -219,7 +244,7 @@ async function status() {
 
   try {
     const recent = await client.query<{ ts: string; type: string; event: string }>(`
-      SELECT ts, type, event FROM platform.events ORDER BY ingested DESC LIMIT 5
+      SELECT ULIDStringToDateTime(id) AS ts, type, event FROM platform.events ORDER BY id DESC LIMIT 5
     `)
     if (recent.data.length > 0) {
       console.log('  Recent events:')

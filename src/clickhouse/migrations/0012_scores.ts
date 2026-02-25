@@ -21,23 +21,7 @@ CREATE TABLE IF NOT EXISTS {database}.scores (
 ) ENGINE = ReplacingMergeTree(event_ts)
 PARTITION BY toYYYYMM(event_ts)
 ORDER BY (ns, toDate(event_ts), name, id)
-;
-CREATE MATERIALIZED VIEW IF NOT EXISTS {database}.scores_mv TO {database}.scores AS
-SELECT
-  ev.data.id AS id,
-  ev.data.traceId AS trace_id,
-  ev.data.observationId AS observation_id,
-  ev.ns AS ns,
-  ev.data.name AS name,
-  ev.data.value AS value,
-  ev.data.source AS source,
-  ev.data.dataType AS data_type,
-  ev.data.comment AS comment,
-  CAST(ev.data.metadata, 'Map(String, String)') AS metadata,
-  ev.actor AS actor,
-  ev.ts AS event_ts
-FROM {database}.events AS ev
-WHERE ev.type = 'llm.score'
+
 `,
-  down: 'DROP VIEW IF EXISTS {database}.scores_mv; DROP TABLE IF EXISTS {database}.scores',
+  down: 'DROP TABLE IF EXISTS {database}.scores',
 }

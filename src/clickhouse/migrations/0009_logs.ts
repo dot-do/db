@@ -23,21 +23,7 @@ CREATE TABLE IF NOT EXISTS {database}.logs (
 PARTITION BY toDate(Timestamp)
 ORDER BY (ServiceName, toDateTime(Timestamp), Timestamp)
 TTL toDate(Timestamp) + toIntervalDay(30)
-;
-CREATE MATERIALIZED VIEW IF NOT EXISTS {database}.logs_mv TO {database}.logs AS
-SELECT
-  ev.ts AS Timestamp,
-  ev.data.traceId AS TraceId,
-  ev.data.spanId AS SpanId,
-  ev.data.severityText AS SeverityText,
-  toUInt8(ev.data.severityNumber) AS SeverityNumber,
-  ev.data.serviceName AS ServiceName,
-  ev.data.body AS Body,
-  CAST(ev.data.resourceAttributes, 'Map(String, String)') AS ResourceAttributes,
-  CAST(ev.data.logAttributes, 'Map(String, String)') AS LogAttributes,
-  ev.ns AS ns
-FROM {database}.events AS ev
-WHERE ev.type = 'otel.log'
+
 `,
-  down: 'DROP VIEW IF EXISTS {database}.logs_mv; DROP TABLE IF EXISTS {database}.logs',
+  down: 'DROP TABLE IF EXISTS {database}.logs',
 }

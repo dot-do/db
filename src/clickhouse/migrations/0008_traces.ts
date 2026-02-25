@@ -25,24 +25,7 @@ CREATE TABLE IF NOT EXISTS {database}.traces (
 PARTITION BY toDate(Timestamp)
 ORDER BY (ServiceName, SpanName, toDateTime(Timestamp))
 TTL toDate(Timestamp) + toIntervalDay(30)
-;
-CREATE MATERIALIZED VIEW IF NOT EXISTS {database}.traces_mv TO {database}.traces AS
-SELECT
-  ev.ts AS Timestamp,
-  ev.data.traceId AS TraceId,
-  ev.data.spanId AS SpanId,
-  ev.data.parentSpanId AS ParentSpanId,
-  ev.data.spanName AS SpanName,
-  ev.data.spanKind AS SpanKind,
-  ev.data.serviceName AS ServiceName,
-  CAST(ev.data.resourceAttributes, 'Map(String, String)') AS ResourceAttributes,
-  CAST(ev.data.spanAttributes, 'Map(String, String)') AS SpanAttributes,
-  ev.data.duration AS Duration,
-  ev.data.statusCode AS StatusCode,
-  ev.data.statusMessage AS StatusMessage,
-  ev.ns AS ns
-FROM {database}.events AS ev
-WHERE ev.type = 'otel.span'
+
 `,
-  down: 'DROP VIEW IF EXISTS {database}.traces_mv; DROP TABLE IF EXISTS {database}.traces',
+  down: 'DROP TABLE IF EXISTS {database}.traces',
 }
