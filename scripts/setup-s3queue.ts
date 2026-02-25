@@ -136,33 +136,29 @@ async function create() {
         )
       ) AS type,
 
-      -- event: source-provided > derive from tail trace (WorkerName.Category.Outcome)
-      -- PascalCase: replaceAll(initcap(kebab), '-', '') converts 'headlessly-api' → 'HeadlesslyApi'
+      -- event: source-provided > derive from tail trace (action only, no worker prefix)
+      -- Worker name goes in `source`, event is just the clean action: fetch.ok, rpc.handleRpc, cron.ok
       coalesce(
         nullIf(JSONExtractString(value, 'event'), ''),
-        concat(
-          replaceAll(initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'scriptName'), ''), 'Unknown')), '-', ''),
-          '.',
-          multiIf(
-            JSONHas(value, 'data', 'event', 'request'),
-              concat('Fetch.', if(
-                toUInt16OrZero(JSONExtractRaw(value, 'data', 'event', 'response', 'status')) BETWEEN 200 AND 399,
-                'Ok', 'Error'
-              )),
-            JSONHas(value, 'data', 'event', 'rpcMethod'),
-              concat('Rpc.', JSONExtractString(value, 'data', 'event', 'rpcMethod')),
-            JSONHas(value, 'data', 'event', 'scheduledTime'),
-              concat('Cron.', initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))),
-            JSONHas(value, 'data', 'event', 'queue'),
-              concat('Queue.', initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))),
-            JSONExtractString(value, 'data', 'event', 'type') = 'alarm',
-              concat('Alarm.', initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))),
-            JSONHas(value, 'data', 'event', 'rcptTo'),
-              concat('Email.', initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))),
-            JSONHas(value, 'data', 'event', 'getWebSocketEvent'),
-              concat('WebSocket.', initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))),
-            initcap(coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown'))
-          )
+        multiIf(
+          JSONHas(value, 'data', 'event', 'request'),
+            concat('fetch.', if(
+              toUInt16OrZero(JSONExtractRaw(value, 'data', 'event', 'response', 'status')) BETWEEN 200 AND 399,
+              'ok', 'error'
+            )),
+          JSONHas(value, 'data', 'event', 'rpcMethod'),
+            concat('rpc.', JSONExtractString(value, 'data', 'event', 'rpcMethod')),
+          JSONHas(value, 'data', 'event', 'scheduledTime'),
+            concat('cron.', coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')),
+          JSONHas(value, 'data', 'event', 'queue'),
+            concat('queue.', coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')),
+          JSONExtractString(value, 'data', 'event', 'type') = 'alarm',
+            concat('alarm.', coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')),
+          JSONHas(value, 'data', 'event', 'rcptTo'),
+            concat('email.', coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')),
+          JSONHas(value, 'data', 'event', 'getWebSocketEvent'),
+            concat('websocket.', coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')),
+          coalesce(nullIf(JSONExtractString(value, 'data', 'outcome'), ''), 'unknown')
         )
       ) AS event,
 
@@ -177,7 +173,12 @@ async function create() {
         ''
       ) AS url,
 
-      coalesce(nullIf(JSONExtractString(value, 'source'), ''), 'unknown') AS source,
+      -- source: for tail events use the actual worker name (scriptName), otherwise use source-provided
+      if(
+        JSONExtractString(value, 'source') = 'tail' AND JSONHas(value, 'data', 'scriptName'),
+        JSONExtractString(value, 'data', 'scriptName'),
+        coalesce(nullIf(JSONExtractString(value, 'source'), ''), 'unknown')
+      ) AS source,
 
       -- actor: source-provided curated identity + geo context
       -- For records with actor already set (ingest, otel), use directly
