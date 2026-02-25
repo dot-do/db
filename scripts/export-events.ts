@@ -166,20 +166,20 @@ async function reset() {
   await client.exec('DROP TABLE IF EXISTS streams.queue')
   console.log('  streams.queue dropped')
 
-  console.log('Recreating S3Queue with new keeper_path (v8)...')
+  console.log('Recreating S3Queue with new keeper_path (v9)...')
   await client.exec(`
     CREATE TABLE IF NOT EXISTS streams.queue (
       value String
     ) ENGINE = S3Queue('${queueUrl}', '${r2Ak}', '${r2Sk}', 'JSONEachRow')
     SETTINGS
       mode = 'unordered',
-      keeper_path = '/clickhouse/s3queue/platform_queue_v8',
+      keeper_path = '/clickhouse/s3queue/platform_queue_v9',
       s3queue_polling_min_timeout_ms = 500,
       s3queue_polling_max_timeout_ms = 2000,
       s3queue_processing_threads_num = 4,
       s3queue_loading_retries = 3
   `)
-  console.log('  streams.queue created (v8)')
+  console.log('  streams.queue created (v9)')
 
   console.log('  waiting 5s for S3Queue initialization...')
   await new Promise((r) => setTimeout(r, 5000))
