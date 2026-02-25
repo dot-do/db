@@ -4,7 +4,7 @@ import { resolve } from 'path'
 import { ClickHouseClient } from '../src/clickhouse/client'
 
 // Load credentials from .env (never printed, never logged)
-config({ path: resolve(import.meta.dirname, '../.env') })
+config({ path: resolve(import.meta.dirname, '../.env'), quiet: true })
 
 const endpoint = process.env.CLICKHOUSE_URL
 const user = process.env.CLICKHOUSE_USER ?? 'default'
