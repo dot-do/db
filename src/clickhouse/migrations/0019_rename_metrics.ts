@@ -1,7 +1,7 @@
 import type { Migration } from '../migrate'
 
 export const migration: Migration = {
-  version: 19,
+  version: 21,
   name: 'rename_metrics',
   up: `
 CREATE TABLE IF NOT EXISTS {database}.metrics (

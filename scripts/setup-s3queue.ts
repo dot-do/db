@@ -95,7 +95,8 @@ async function create() {
       ) AS ray,
 
       -- ns: source-provided > real hostname from URL (must contain '.' to skip DO stubs like 'buffer')
-      coalesce(
+      -- Strip 'timing.' prefix from otel-timing snippet (requests hit timing.* subdomains)
+      replaceRegexpOne(coalesce(
         nullIf(JSONExtractString(value, 'ns'), ''),
         if(
           position(domain(coalesce(
@@ -108,7 +109,7 @@ async function create() {
           )),
           ''
         )
-      ) AS ns,
+      ), '^timing\\.', '') AS ns,
 
       -- domain: source-provided > hostname from request url > hostname from tail trace
       coalesce(
@@ -137,7 +138,7 @@ async function create() {
       ) AS type,
 
       -- event: source-provided > derive from tail trace (action only, no worker prefix)
-      -- Worker name goes in `source`, event is just the clean action: fetch.ok, rpc.handleRpc, cron.ok
+      -- Worker name goes in source, event is just the clean action: fetch.ok, rpc.handleRpc, cron.ok
       coalesce(
         nullIf(JSONExtractString(value, 'event'), ''),
         multiIf(
