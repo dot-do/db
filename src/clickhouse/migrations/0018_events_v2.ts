@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS {database}.events_v2 (
   url         String,
   source      LowCardinality(String),
   actor       JSON(max_dynamic_paths = 32),
-  data        JSON(max_dynamic_paths = 64),
-  meta        JSON(max_dynamic_paths = 16),
+  data        JSON(max_dynamic_paths = 0),
+  meta        JSON(max_dynamic_paths = 0),
   file        String DEFAULT '',
   ingested    DateTime64(3) DEFAULT now64(3),
 
@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS {database}.events_v2 (
 ) ENGINE = ReplacingMergeTree
 PARTITION BY toYYYYMM(ULIDStringToDateTime(id))
 ORDER BY id
+SETTINGS
+  object_serialization_version = 'v3',
+  object_shared_data_serialization_version = 'advanced',
+  object_shared_data_serialization_version_for_zero_level_parts = 'map'
 ;
 INSERT INTO {database}.events_v2
 SELECT
