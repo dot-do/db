@@ -28,5 +28,6 @@ import { migration as m00113 } from './00113_events'
 import { migration as m00120 } from './00120_streams_github'
 import { migration as m00121 } from './00121_streams_stripe'
 import { migration as m00122 } from './00122_streams_workos'
+import { migration as m00123 } from './00123_streams_cloudflare'
 
-export const migrations = [m0001, m0002, m0003, m0004, m0005, m0006, m0007, m0008, m0009, m0010, m0011, m0012, m0013, m0014, m0015, m0016, m0017, m0018, m0019, m00102, m00104, m00105, m00110, m00112, m00113, m00120, m00121, m00122]
+export const migrations = [m0001, m0002, m0003, m0004, m0005, m0006, m0007, m0008, m0009, m0010, m0011, m0012, m0013, m0014, m0015, m0016, m0017, m0018, m0019, m00102, m00104, m00105, m00110, m00112, m00113, m00120, m00121, m00122, m00123]
